@@ -1,0 +1,48 @@
+{
+  "app_name": "Autonomous Logistic",
+  "app_mode": "mock",
+  "bind_host": "127.0.0.1",
+  "bind_port": 8000,
+  "db_path": "data/autonomous_logistic.sqlite3",
+  "robot": {
+    "adapter": "mock",
+    "sdk_module_name": "agibot_sdk",
+    "robot_ip": "192.168.168.168",
+    "client_ip": "127.0.0.1",
+    "sdk_port": 43988,
+    "control_level": "high"
+  },
+  "capabilities": {
+    "has_lidar": false,
+    "has_speaker": false,
+    "has_screen": false,
+    "has_touch_input": false,
+    "has_button_panel": false,
+    "has_remote_dispatch": true,
+    "has_local_hmi": false
+  },
+  "stations": [
+    {
+      "station_id": "STATION_A",
+      "name": "Station A",
+      "position": {
+        "type": "generic",
+        "label": "A"
+      },
+      "metadata": {
+        "description": "Default source station for local mock runs"
+      }
+    },
+    {
+      "station_id": "STATION_B",
+      "name": "Station B",
+      "position": {
+        "type": "generic",
+        "label": "B"
+      },
+      "metadata": {
+        "description": "Default destination station for local mock runs"
+      }
+    }
+  ]
+}

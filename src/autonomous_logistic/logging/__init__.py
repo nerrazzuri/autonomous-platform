@@ -1,0 +1,1 @@
+"""Structured audit event logging."""
