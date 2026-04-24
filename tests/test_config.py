@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import importlib
+import sys
+from textwrap import dedent
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_config_module(monkeypatch: pytest.MonkeyPatch, *, preserve_env: bool = False):
+    if not preserve_env:
+        monkeypatch.delenv("QUADRUPED_CONFIG_PATH", raising=False)
+    monkeypatch.chdir(ROOT)
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    sys.modules.pop("core.config", None)
+    sys.modules.pop("core", None)
+    return importlib.import_module("core.config")
+
+
+def write_yaml(path: Path, content: str) -> None:
+    path.write_text(dedent(content).strip() + "\n", encoding="utf-8")
+
+
+def test_load_defaults_when_file_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch, preserve_env=True)
+
+    config = module.load_config(tmp_path / "missing.yaml")
+
+    assert config.quadruped.quadruped_ip == "192.168.234.1"
+    assert config.api.port == 8080
+    assert config.database.sqlite_path == "data/quadruped.db"
+
+
+def test_load_partial_yaml_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch, preserve_env=True)
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        """
+        quadruped:
+          quadruped_ip: "192.168.1.88"
+        logging:
+          level: "debug"
+        """,
+    )
+
+    config = module.load_config(config_path)
+
+    assert config.quadruped.quadruped_ip == "192.168.1.88"
+    assert config.quadruped.sdk_port == 43988
+    assert config.logging.level == "DEBUG"
+
+
+def test_invalid_port_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch, preserve_env=True)
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        """
+        api:
+          port: 70000
+        """,
+    )
+
+    with pytest.raises(module.ConfigError, match="config.yaml"):
+        module.load_config(config_path)
+
+
+def test_invalid_battery_thresholds_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch)
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        """
+        battery:
+          warn_pct: 20
+          critical_pct: 25
+        """,
+    )
+
+    with pytest.raises(module.ConfigError, match="battery"):
+        module.load_config(config_path)
+
+
+def test_invalid_log_level_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch)
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        """
+        logging:
+          level: "VERBOSE"
+        """,
+    )
+
+    with pytest.raises(module.ConfigError, match="logging"):
+        module.load_config(config_path)
+
+
+def test_email_enabled_requires_smtp_host_and_supervisor_email(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = load_config_module(monkeypatch)
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        """
+        alerts:
+          email_enabled: true
+        """,
+    )
+
+    with pytest.raises(module.ConfigError, match="supervisor_email"):
+        module.load_config(config_path)
+
+
+def test_get_token_for_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch)
+
+    auth = module.AuthSection(
+        operator_token="operator-secret",
+        qa_token="qa-secret",
+        supervisor_token="supervisor-secret",
+    )
+
+    assert auth.get_token_for_role("operator") == "operator-secret"
+    assert auth.get_token_for_role("qa") == "qa-secret"
+    assert auth.get_token_for_role("supervisor") == "supervisor-secret"
+    with pytest.raises(ValueError, match="Unsupported role"):
+        auth.get_token_for_role("guest")
+
+
+def test_path_helpers_return_path_objects(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch)
+
+    config = module.AppConfig()
+
+    assert config.database_path() == Path("data/quadruped.db")
+    assert config.routes_path() == Path("data/routes.json")
+    assert config.stations_path() == Path("data/stations.json")
+    assert config.log_path() == Path("logs")
+
+    assert isinstance(config.database_path(), Path)
+    assert isinstance(config.routes_path(), Path)
+    assert isinstance(config.stations_path(), Path)
+    assert isinstance(config.log_path(), Path)
+
+
+def test_reload_config_replaces_cached_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        """
+        quadruped:
+          quadruped_ip: "192.168.10.10"
+        """,
+    )
+    monkeypatch.setenv("QUADRUPED_CONFIG_PATH", str(config_path))
+
+    module = load_config_module(monkeypatch, preserve_env=True)
+    first = module.get_config()
+    assert first.quadruped.quadruped_ip == "192.168.10.10"
+
+    write_yaml(
+        config_path,
+        """
+        quadruped:
+          quadruped_ip: "192.168.10.11"
+        """,
+    )
+
+    reloaded = module.reload_config()
+
+    assert reloaded.quadruped.quadruped_ip == "192.168.10.11"
+    assert module.get_config() is reloaded
+    assert module.CONFIG is reloaded
+    assert first is not reloaded

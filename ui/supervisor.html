@@ -1,0 +1,1563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supervisor Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: oklch(0.16 0.01 240);
+      --bg-top: oklch(0.2 0.018 230);
+      --panel: oklch(0.24 0.012 236 / 0.96);
+      --panel-strong: oklch(0.29 0.014 232 / 0.98);
+      --panel-soft: oklch(0.21 0.012 240 / 0.9);
+      --line: oklch(0.41 0.015 232 / 0.72);
+      --text: oklch(0.95 0.007 240);
+      --muted: oklch(0.77 0.01 236);
+      --accent: oklch(0.76 0.1 220);
+      --accent-strong: oklch(0.67 0.11 220);
+      --success: oklch(0.8 0.14 150);
+      --warning: oklch(0.82 0.14 88);
+      --danger: oklch(0.68 0.18 28);
+      --danger-strong: oklch(0.62 0.19 28);
+      --shadow: 0 24px 52px rgba(3, 8, 18, 0.32);
+      --radius: 24px;
+      --radius-sm: 16px;
+      --transition: 180ms cubic-bezier(0.22, 1, 0.36, 1);
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(65, 124, 199, 0.2), transparent 28%),
+        radial-gradient(circle at top right, rgba(205, 113, 50, 0.12), transparent 24%),
+        linear-gradient(180deg, var(--bg-top), var(--bg));
+      padding: 22px;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.28;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.025)) 0 0 / 100% 1px,
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.02)) 0 0 / 1px 100%;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.45), transparent 88%);
+    }
+
+    .shell {
+      width: min(1480px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      padding: 24px;
+      background:
+        linear-gradient(135deg, rgba(71, 132, 215, 0.16), transparent 40%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        var(--panel-strong);
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 8px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 3vw, 2.9rem);
+      line-height: 1;
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 65ch;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    .status-pill {
+      min-height: 54px;
+      padding: 0 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 999px;
+      background: rgba(11, 17, 28, 0.46);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: var(--muted);
+      box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.04);
+      transition: background-color var(--transition), transform var(--transition);
+    }
+
+    .status-pill[data-tone="success"] .status-dot {
+      background: var(--success);
+      transform: scale(1.08);
+    }
+
+    .status-pill[data-tone="warning"] .status-dot {
+      background: var(--warning);
+    }
+
+    .status-pill[data-tone="danger"] .status-dot {
+      background: var(--danger);
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .toolbar-note {
+      padding: 18px 20px;
+      display: grid;
+      gap: 6px;
+      align-content: center;
+      background: var(--panel-soft);
+    }
+
+    .toolbar-note strong {
+      font-size: 1rem;
+    }
+
+    .toolbar-note span {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(170px, 1fr));
+      gap: 12px;
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      min-height: 74px;
+      padding: 16px 18px;
+      border-radius: 20px;
+      color: var(--text);
+      font: inherit;
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      transition:
+        transform var(--transition),
+        box-shadow var(--transition),
+        background-color var(--transition),
+        opacity var(--transition);
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    button:focus-visible {
+      outline: 3px solid rgba(126, 178, 235, 0.7);
+      outline-offset: 3px;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+      color: oklch(0.18 0.015 220);
+      box-shadow: 0 16px 34px rgba(68, 119, 183, 0.24);
+    }
+
+    .btn-danger {
+      background: linear-gradient(180deg, var(--danger), var(--danger-strong));
+      color: oklch(0.97 0.004 35);
+      box-shadow: 0 16px 34px rgba(177, 68, 45, 0.24);
+    }
+
+    .btn-muted {
+      background: rgba(87, 114, 149, 0.18);
+      border: 1px solid rgba(108, 148, 196, 0.28);
+    }
+
+    .button-help {
+      display: block;
+      margin-top: 6px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: rgba(234, 239, 247, 0.82);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      padding: 22px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .card-kicker {
+      color: var(--muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .card-title {
+      margin: 4px 0 0;
+      font-size: 1.08rem;
+      letter-spacing: 0.02em;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      margin-top: 8px;
+      font-size: 1.22rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      word-break: break-word;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .main-column,
+    .side-column {
+      display: grid;
+      gap: 18px;
+    }
+
+    .table-card {
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .table-header {
+      padding: 20px 22px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th,
+    td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      vertical-align: top;
+      font-size: 0.94rem;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      position: sticky;
+      top: 0;
+      background: oklch(0.23 0.012 236 / 0.98);
+      z-index: 1;
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .status-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.82rem;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+    }
+
+    .status-tag.success {
+      background: rgba(44, 131, 92, 0.22);
+      border-color: rgba(90, 198, 144, 0.32);
+    }
+
+    .status-tag.warning {
+      background: rgba(174, 118, 26, 0.22);
+      border-color: rgba(245, 182, 72, 0.28);
+    }
+
+    .status-tag.danger {
+      background: rgba(160, 58, 38, 0.24);
+      border-color: rgba(234, 109, 86, 0.3);
+    }
+
+    .status-tag.info {
+      background: rgba(59, 102, 152, 0.18);
+      border-color: rgba(95, 149, 212, 0.28);
+    }
+
+    .events-panel {
+      padding: 22px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .events-list {
+      display: grid;
+      gap: 10px;
+      max-height: 780px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .event-item {
+      padding: 14px 15px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      display: grid;
+      gap: 7px;
+    }
+
+    .event-item[data-tone="critical"] {
+      background: rgba(155, 48, 31, 0.3);
+      border-color: rgba(239, 115, 90, 0.4);
+      box-shadow: inset 0 0 0 1px rgba(244, 131, 108, 0.14);
+    }
+
+    .event-item[data-tone="danger"] {
+      background: rgba(160, 58, 38, 0.22);
+      border-color: rgba(234, 109, 86, 0.28);
+    }
+
+    .event-item[data-tone="warning"] {
+      background: rgba(174, 118, 26, 0.18);
+      border-color: rgba(245, 182, 72, 0.24);
+    }
+
+    .event-item[data-tone="success"] {
+      background: rgba(42, 131, 92, 0.18);
+      border-color: rgba(90, 198, 144, 0.26);
+    }
+
+    .event-item[data-tone="info"] {
+      background: rgba(59, 102, 152, 0.14);
+      border-color: rgba(95, 149, 212, 0.22);
+    }
+
+    .event-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .severity-pill,
+    .module-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+    }
+
+    .severity-pill.critical,
+    .severity-pill.danger {
+      background: rgba(176, 67, 42, 0.28);
+      border-color: rgba(240, 121, 95, 0.34);
+    }
+
+    .severity-pill.warning {
+      background: rgba(176, 132, 47, 0.22);
+      border-color: rgba(241, 186, 74, 0.28);
+    }
+
+    .severity-pill.success {
+      background: rgba(54, 142, 101, 0.2);
+      border-color: rgba(90, 198, 144, 0.26);
+    }
+
+    .severity-pill.info {
+      background: rgba(70, 112, 165, 0.18);
+      border-color: rgba(103, 154, 215, 0.24);
+    }
+
+    .module-pill {
+      color: var(--muted);
+    }
+
+    .event-time {
+      color: var(--muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .event-message {
+      font-size: 0.98rem;
+      line-height: 1.45;
+    }
+
+    .empty-note {
+      padding: 18px;
+      border-radius: 18px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px dashed rgba(255, 255, 255, 0.08);
+    }
+
+    @media (max-width: 1180px) {
+      .summary-grid,
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+
+      .events-list {
+        max-height: 420px;
+      }
+    }
+
+    @media (max-width: 900px) {
+      body {
+        padding: 14px;
+      }
+
+      .hero,
+      .toolbar {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+
+      .hero-meta {
+        justify-content: flex-start;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="panel hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Sumitomo Factory Logistics</p>
+        <h1>Supervisor Dashboard</h1>
+        <p class="subtitle">Monitor live quadruped telemetry, task flow, route readiness, alerts, and emergency controls from one real-time operations surface.</p>
+      </div>
+      <div class="hero-meta">
+        <div class="status-pill" id="connection-pill" data-tone="warning">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="connection-text">Awaiting credentials</span>
+        </div>
+        <div class="status-pill" id="auth-pill" data-tone="warning">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="auth-text">Token missing</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="toolbar">
+      <div class="panel toolbar-note">
+        <strong id="headline-note">Supervisor token is required for protected data and controls.</strong>
+        <span id="subheadline-note">Open this page with <code>/ui/supervisor.html?token=&lt;supervisor-token&gt;</code>.</span>
+      </div>
+      <div class="controls">
+        <button type="button" class="btn-danger" id="estop-button">
+          Emergency Stop
+          <span class="button-help">POST /estop</span>
+        </button>
+        <button type="button" class="btn-muted" id="release-button">
+          Release E-Stop
+          <span class="button-help">POST /estop/release</span>
+        </button>
+        <button type="button" class="btn-primary" id="refresh-button">
+          Refresh
+          <span class="button-help">Reload REST data now</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="summary-grid">
+      <article class="panel card">
+        <div class="card-head">
+          <div>
+            <div class="card-kicker">Quadruped</div>
+            <h2 class="card-title">Live Robot Status</h2>
+          </div>
+        </div>
+        <div class="metrics" id="quadruped-metrics"></div>
+      </article>
+
+      <article class="panel card">
+        <div class="card-head">
+          <div>
+            <div class="card-kicker">Battery And Safety</div>
+            <h2 class="card-title">Power, Connectivity, E-Stop</h2>
+          </div>
+        </div>
+        <div class="metrics" id="battery-metrics"></div>
+      </article>
+
+      <article class="panel card">
+        <div class="card-head">
+          <div>
+            <div class="card-kicker">Queue</div>
+            <h2 class="card-title">Task Queue Summary</h2>
+          </div>
+        </div>
+        <div class="metrics" id="queue-metrics"></div>
+      </article>
+    </section>
+
+    <section class="dashboard">
+      <div class="main-column">
+        <article class="panel table-card">
+          <div class="table-header">
+            <div>
+              <div class="card-kicker">Tasks</div>
+              <h2 class="card-title">Current Task Table</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table aria-label="Task table">
+              <thead>
+                <tr>
+                  <th>Task ID</th>
+                  <th>Station</th>
+                  <th>Destination</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="task-table-body"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel table-card">
+          <div class="table-header">
+            <div>
+              <div class="card-kicker">Routes</div>
+              <h2 class="card-title">Configured Route Table</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table aria-label="Route table">
+              <thead>
+                <tr>
+                  <th>Route ID</th>
+                  <th>Route Name</th>
+                  <th>Origin</th>
+                  <th>Destination</th>
+                  <th>Active</th>
+                  <th>Waypoint Count</th>
+                </tr>
+              </thead>
+              <tbody id="route-table-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+
+      <aside class="side-column">
+        <article class="panel events-panel">
+          <div class="card-head">
+            <div>
+              <div class="card-kicker">Alerts And Events</div>
+              <h2 class="card-title">Live Event Panel</h2>
+            </div>
+          </div>
+          <div class="events-list" id="event-list"></div>
+        </article>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const state = {
+        token: "",
+        hasToken: false,
+        ws: null,
+        socketGeneration: 0,
+        reconnectTimer: null,
+        reconnectDelayMs: 3000,
+        refreshPending: false,
+        estopPending: false,
+        releasePending: false,
+        estopState: "Unknown",
+        lastAlertSeverity: "info",
+        lastAlertMessage: "No active alert.",
+        quadruped: {
+          mode: null,
+          battery_pct: null,
+          position: null,
+          rpy: null,
+          control_mode: null,
+          connection_ok: null,
+          timestamp: null,
+          active_task_id: null
+        },
+        queue: {
+          total: 0,
+          queued: 0,
+          dispatched: 0,
+          awaiting_load: 0,
+          in_transit: 0,
+          awaiting_unload: 0,
+          completed: 0,
+          failed: 0,
+          cancelled: 0
+        },
+        tasks: [],
+        routes: [],
+        events: []
+      };
+
+      const elements = {
+        connectionPill: document.getElementById("connection-pill"),
+        connectionText: document.getElementById("connection-text"),
+        authPill: document.getElementById("auth-pill"),
+        authText: document.getElementById("auth-text"),
+        headlineNote: document.getElementById("headline-note"),
+        subheadlineNote: document.getElementById("subheadline-note"),
+        estopButton: document.getElementById("estop-button"),
+        releaseButton: document.getElementById("release-button"),
+        refreshButton: document.getElementById("refresh-button"),
+        quadrupedMetrics: document.getElementById("quadruped-metrics"),
+        batteryMetrics: document.getElementById("battery-metrics"),
+        queueMetrics: document.getElementById("queue-metrics"),
+        taskTableBody: document.getElementById("task-table-body"),
+        routeTableBody: document.getElementById("route-table-body"),
+        eventList: document.getElementById("event-list")
+      };
+
+      const quadrupedMetrics = [
+        ["Mode", "mode"],
+        ["Active Task", "active_task_id"],
+        ["Position", "position"],
+        ["RPY", "rpy"],
+        ["Control Mode", "control_mode"],
+        ["Last Update", "timestamp"]
+      ];
+
+      const batteryMetrics = [
+        ["Battery", "battery"],
+        ["Connection", "connection"],
+        ["E-Stop", "estop"],
+        ["Latest Alert", "latest_alert"]
+      ];
+
+      const queueMetrics = [
+        ["Total", "total"],
+        ["Queued", "queued"],
+        ["Dispatched", "dispatched"],
+        ["Awaiting Load", "awaiting_load"],
+        ["In Transit", "in_transit"],
+        ["Awaiting Unload", "awaiting_unload"],
+        ["Completed", "completed"],
+        ["Failed", "failed"],
+        ["Cancelled", "cancelled"]
+      ];
+
+      init();
+
+      function init() {
+        bindEvents();
+        bootstrapFromQuery();
+        renderAll();
+
+        if (!state.hasToken) {
+          addEvent({
+            severity: "critical",
+            message: "Missing token in query parameters. Open /ui/supervisor.html?token=<supervisor-token>.",
+            module: "ui/supervisor.html"
+          });
+          setConnectionState("Credentials required", "danger");
+          setAuthState("Token missing", "danger");
+          disableProtectedControls();
+          return;
+        }
+
+        setAuthState("Supervisor token loaded", "success");
+        elements.headlineNote.textContent = "Protected controls are available with the provided supervisor token.";
+        elements.subheadlineNote.textContent = "REST polling and live /ws updates will keep the dashboard current.";
+        addEvent({
+          severity: "info",
+          message: "Supervisor dashboard initialized.",
+          module: "ui/supervisor.html"
+        });
+
+        refreshAllData();
+        connectWebSocket();
+      }
+
+      function bindEvents() {
+        elements.refreshButton.addEventListener("click", refreshAllData);
+        elements.estopButton.addEventListener("click", function () {
+          triggerControl("/estop", "Emergency stop triggered.", "Emergency stop failed.");
+        });
+        elements.releaseButton.addEventListener("click", function () {
+          triggerControl("/estop/release", "Emergency stop released.", "Emergency stop release failed.");
+        });
+        window.addEventListener("beforeunload", teardownSocket);
+      }
+
+      function bootstrapFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        state.token = (params.get("token") || "").trim();
+        state.hasToken = Boolean(state.token);
+      }
+
+      async function refreshAllData() {
+        if (!state.hasToken || state.refreshPending) {
+          return;
+        }
+
+        state.refreshPending = true;
+        updateControls();
+
+        const results = await Promise.allSettled([
+          refreshQuadrupedStatus(),
+          refreshQueueStatus(),
+          refreshTasks(),
+          refreshRoutes()
+        ]);
+
+        const failures = results.filter(function (result) {
+          return result.status === "rejected";
+        }).length;
+
+        if (failures === 0) {
+          addEvent({
+            severity: "success",
+            message: "Dashboard data refreshed successfully.",
+            module: "rest"
+          });
+        } else {
+          addEvent({
+            severity: "warning",
+            message: "Dashboard refresh completed with " + failures + " fetch issue" + (failures === 1 ? "" : "s") + ".",
+            module: "rest"
+          });
+        }
+
+        state.refreshPending = false;
+        updateControls();
+      }
+
+      async function refreshQuadrupedStatus() {
+        const response = await authorizedFetch("/quadruped/status");
+        const payload = await response.json();
+        state.quadruped = Object.assign({}, state.quadruped, payload);
+        renderQuadruped();
+        renderBattery();
+      }
+
+      async function refreshQueueStatus() {
+        const response = await authorizedFetch("/queue/status");
+        state.queue = await response.json();
+        renderQueue();
+      }
+
+      async function refreshTasks() {
+        const response = await authorizedFetch("/tasks");
+        state.tasks = await response.json();
+        renderTasks();
+      }
+
+      async function refreshRoutes() {
+        const response = await authorizedFetch("/routes");
+        state.routes = await response.json();
+        renderRoutes();
+      }
+
+      async function triggerControl(path, successMessage, failureMessage) {
+        if (!state.hasToken) {
+          addEvent({
+            severity: "critical",
+            message: "A supervisor token is required before using emergency controls.",
+            module: "ui/supervisor.html"
+          });
+          return;
+        }
+
+        if (path === "/estop") {
+          if (state.estopPending) {
+            return;
+          }
+          state.estopPending = true;
+        } else {
+          if (state.releasePending) {
+            return;
+          }
+          state.releasePending = true;
+        }
+        updateControls();
+
+        try {
+          const response = await authorizedFetch(path, { method: "POST" });
+          const payload = await response.json();
+          state.estopState = path === "/estop" ? "Engaged" : "Released";
+          renderBattery();
+          addEvent({
+            severity: "success",
+            message: payload.message || successMessage,
+            module: "rest"
+          });
+        } catch (error) {
+          addEvent({
+            severity: "critical",
+            message: failureMessage + " " + error.message,
+            module: "rest"
+          });
+        } finally {
+          if (path === "/estop") {
+            state.estopPending = false;
+          } else {
+            state.releasePending = false;
+          }
+          updateControls();
+        }
+      }
+
+      function connectWebSocket() {
+        if (!state.hasToken) {
+          return;
+        }
+
+        if (state.reconnectTimer) {
+          window.clearTimeout(state.reconnectTimer);
+          state.reconnectTimer = null;
+        }
+
+        if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) {
+          return;
+        }
+
+        teardownSocket();
+        setConnectionState("Connecting", "warning");
+
+        state.socketGeneration += 1;
+        const generation = state.socketGeneration;
+        const socket = new WebSocket(buildWebSocketUrl());
+        state.ws = socket;
+
+        socket.addEventListener("open", function () {
+          if (generation !== state.socketGeneration) {
+            socket.close();
+            return;
+          }
+          setConnectionState("Connected", "success");
+          addEvent({
+            severity: "success",
+            message: "Live updates connected.",
+            module: "ws"
+          });
+        });
+
+        socket.addEventListener("message", function (event) {
+          if (generation !== state.socketGeneration) {
+            return;
+          }
+          handleSocketMessage(event.data);
+        });
+
+        socket.addEventListener("error", function () {
+          if (generation !== state.socketGeneration) {
+            return;
+          }
+          setConnectionState("Connection error", "danger");
+        });
+
+        socket.addEventListener("close", function () {
+          if (generation !== state.socketGeneration) {
+            return;
+          }
+          state.ws = null;
+          setConnectionState("Disconnected", "warning");
+          scheduleReconnect();
+        });
+      }
+
+      function scheduleReconnect() {
+        if (!state.hasToken || state.reconnectTimer) {
+          return;
+        }
+
+        addEvent({
+          severity: "warning",
+          message: "Live updates disconnected. Reconnecting in 3 seconds.",
+          module: "ws"
+        });
+
+        state.reconnectTimer = window.setTimeout(function () {
+          state.reconnectTimer = null;
+          connectWebSocket();
+        }, state.reconnectDelayMs);
+      }
+
+      function teardownSocket() {
+        if (state.reconnectTimer) {
+          window.clearTimeout(state.reconnectTimer);
+          state.reconnectTimer = null;
+        }
+
+        if (!state.ws) {
+          return;
+        }
+
+        const socket = state.ws;
+        state.ws = null;
+        try {
+          if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+            socket.close();
+          }
+        } catch (error) {
+          console.warn("WebSocket close skipped", error);
+        }
+      }
+
+      function handleSocketMessage(rawMessage) {
+        let message;
+        try {
+          message = JSON.parse(rawMessage);
+        } catch (error) {
+          addEvent({
+            severity: "warning",
+            message: "Received unreadable WebSocket payload.",
+            module: "ws"
+          });
+          return;
+        }
+
+        if (message.type !== "event") {
+          return;
+        }
+
+        const payload = message.payload || {};
+        switch (message.event_name) {
+          case "quadruped.telemetry":
+            const previousQuadruped = Object.assign({}, state.quadruped);
+            state.quadruped = Object.assign({}, state.quadruped, payload);
+            renderQuadruped();
+            renderBattery();
+            if (telemetryChanged(previousQuadruped, state.quadruped)) {
+              addEvent({
+                severity: payload.connection_ok === false ? "warning" : "info",
+                message: telemetryMessage(previousQuadruped, state.quadruped),
+                module: message.source || "ws",
+                timestamp: message.timestamp
+              });
+            }
+            break;
+          case "task.submitted":
+          case "task.status_changed":
+          case "task.completed":
+          case "task.failed":
+          case "task.cancelled":
+            mergeTaskEvent(payload, message.task_id);
+            renderTasks();
+            refreshQueueStatus().catch(function (error) {
+              addEvent({
+                severity: "warning",
+                message: "Queue status refresh failed after task event. " + error.message,
+                module: "rest"
+              });
+            });
+            addEvent({
+              severity: eventSeverity(message.event_name, payload),
+              message: taskEventMessage(message.event_name, payload, message.task_id),
+              module: message.source || "ws",
+              timestamp: message.timestamp
+            });
+            break;
+          case "system.alert":
+          case "battery.warn":
+          case "battery.critical":
+          case "battery.recharged":
+          case "navigation.blocked":
+          case "navigation.completed":
+          case "navigation.failed":
+          case "estop.triggered":
+          case "estop.released":
+            applyOperationalEvent(message.event_name, payload);
+            addEvent({
+              severity: eventSeverity(message.event_name, payload),
+              message: eventMessage(message.event_name, payload),
+              module: message.source || "ws",
+              timestamp: message.timestamp
+            });
+            break;
+          default:
+            break;
+        }
+      }
+
+      function applyOperationalEvent(eventName, payload) {
+        if (eventName === "battery.warn" || eventName === "battery.critical" || eventName === "battery.recharged") {
+          if (payload.battery_pct != null) {
+            state.quadruped.battery_pct = payload.battery_pct;
+          }
+        }
+
+        if (eventName === "estop.triggered") {
+          state.estopState = "Engaged";
+        }
+
+        if (eventName === "estop.released") {
+          state.estopState = "Released";
+        }
+
+        if (eventName === "system.alert") {
+          state.lastAlertSeverity = normalizeSeverity(payload.severity || "critical");
+          state.lastAlertMessage = payload.message || payload.reason || payload.detail || "System alert received.";
+        } else {
+          state.lastAlertSeverity = eventSeverity(eventName, payload);
+          state.lastAlertMessage = eventMessage(eventName, payload);
+        }
+
+        renderBattery();
+      }
+
+      function mergeTaskEvent(payload, taskId) {
+        const id = payload.task_id || taskId;
+        if (!id) {
+          return;
+        }
+
+        const existingIndex = state.tasks.findIndex(function (task) {
+          return task.id === id;
+        });
+        const nextTask = Object.assign({}, existingIndex >= 0 ? state.tasks[existingIndex] : {}, {
+          id: id,
+          station_id: payload.station_id || (existingIndex >= 0 ? state.tasks[existingIndex].station_id : ""),
+          destination_id: payload.destination_id || (existingIndex >= 0 ? state.tasks[existingIndex].destination_id : ""),
+          priority: payload.priority != null ? payload.priority : (existingIndex >= 0 ? state.tasks[existingIndex].priority : 0),
+          status: payload.status || (existingIndex >= 0 ? state.tasks[existingIndex].status : "queued"),
+          notes: payload.notes || (existingIndex >= 0 ? state.tasks[existingIndex].notes : ""),
+          created_at: existingIndex >= 0 ? state.tasks[existingIndex].created_at : ""
+        });
+
+        if (existingIndex >= 0) {
+          state.tasks[existingIndex] = nextTask;
+        } else {
+          state.tasks.unshift(nextTask);
+        }
+      }
+
+      function renderAll() {
+        renderQuadruped();
+        renderBattery();
+        renderQueue();
+        renderTasks();
+        renderRoutes();
+        renderEvents();
+        updateControls();
+      }
+
+      function renderQuadruped() {
+        elements.quadrupedMetrics.innerHTML = quadrupedMetrics.map(function (entry) {
+          return metricTemplate(entry[0], formatQuadrupedValue(entry[1]));
+        }).join("");
+      }
+
+      function renderBattery() {
+        const values = {
+          battery: state.quadruped.battery_pct == null ? "--" : state.quadruped.battery_pct + "%",
+          connection: state.quadruped.connection_ok === true ? "Online" : (state.quadruped.connection_ok === false ? "Offline" : "--"),
+          estop: state.estopState,
+          latest_alert: state.lastAlertMessage
+        };
+
+        elements.batteryMetrics.innerHTML = batteryMetrics.map(function (entry) {
+          return metricTemplate(entry[0], values[entry[1]]);
+        }).join("");
+      }
+
+      function renderQueue() {
+        elements.queueMetrics.innerHTML = queueMetrics.map(function (entry) {
+          return metricTemplate(entry[0], String(state.queue[entry[1]] != null ? state.queue[entry[1]] : 0));
+        }).join("");
+      }
+
+      function renderTasks() {
+        if (state.tasks.length === 0) {
+          elements.taskTableBody.innerHTML = "<tr><td colspan=\"7\"><div class=\"empty-note\">No tasks available yet.</div></td></tr>";
+          return;
+        }
+
+        const sortedTasks = state.tasks.slice().sort(function (left, right) {
+          return (right.created_at || "").localeCompare(left.created_at || "");
+        });
+
+        elements.taskTableBody.innerHTML = sortedTasks.map(function (task) {
+          return "<tr>"
+            + "<td>" + escapeHtml(task.id || "--") + "</td>"
+            + "<td>" + escapeHtml(task.station_id || "--") + "</td>"
+            + "<td>" + escapeHtml(task.destination_id || "--") + "</td>"
+            + "<td>" + escapeHtml(String(task.priority != null ? task.priority : "--")) + "</td>"
+            + "<td>" + statusBadge(task.status) + "</td>"
+            + "<td>" + escapeHtml(formatDateTime(task.created_at)) + "</td>"
+            + "<td>" + escapeHtml(task.notes || "--") + "</td>"
+            + "</tr>";
+        }).join("");
+      }
+
+      function renderRoutes() {
+        if (state.routes.length === 0) {
+          elements.routeTableBody.innerHTML = "<tr><td colspan=\"6\"><div class=\"empty-note\">No routes returned by the backend.</div></td></tr>";
+          return;
+        }
+
+        const sortedRoutes = state.routes.slice().sort(function (left, right) {
+          return String(left.id || "").localeCompare(String(right.id || ""));
+        });
+
+        elements.routeTableBody.innerHTML = sortedRoutes.map(function (route) {
+          return "<tr>"
+            + "<td>" + escapeHtml(route.id || "--") + "</td>"
+            + "<td>" + escapeHtml(route.name || "--") + "</td>"
+            + "<td>" + escapeHtml(route.origin_id || "--") + "</td>"
+            + "<td>" + escapeHtml(route.destination_id || "--") + "</td>"
+            + "<td>" + statusBadge(route.active ? "active" : "inactive") + "</td>"
+            + "<td>" + escapeHtml(String(Array.isArray(route.waypoints) ? route.waypoints.length : 0)) + "</td>"
+            + "</tr>";
+        }).join("");
+      }
+
+      function renderEvents() {
+        if (state.events.length === 0) {
+          elements.eventList.innerHTML = "<div class=\"empty-note\">Live alerts and operational events will appear here.</div>";
+          return;
+        }
+
+        elements.eventList.innerHTML = state.events.map(function (entry) {
+          const tone = entry.severity === "critical" ? "critical" : entry.severity;
+          return "<article class=\"event-item\" data-tone=\"" + tone + "\">"
+            + "<div class=\"event-meta\">"
+            + "<span class=\"severity-pill " + tone + "\">" + escapeHtml(entry.severity) + "</span>"
+            + "<span class=\"module-pill\">" + escapeHtml(entry.module || "system") + "</span>"
+            + "<span class=\"event-time\">" + escapeHtml(entry.timestampLabel) + "</span>"
+            + "</div>"
+            + "<div class=\"event-message\">" + escapeHtml(entry.message) + "</div>"
+            + "</article>";
+        }).join("");
+      }
+
+      function updateControls() {
+        elements.refreshButton.disabled = !state.hasToken || state.refreshPending;
+        elements.estopButton.disabled = !state.hasToken || state.estopPending;
+        elements.releaseButton.disabled = !state.hasToken || state.releasePending;
+      }
+
+      function disableProtectedControls() {
+        elements.refreshButton.disabled = true;
+        elements.estopButton.disabled = true;
+        elements.releaseButton.disabled = true;
+      }
+
+      function metricTemplate(label, value) {
+        return "<div class=\"metric\"><div class=\"metric-label\">" + escapeHtml(label) + "</div><div class=\"metric-value\">" + escapeHtml(value) + "</div></div>";
+      }
+
+      function formatQuadrupedValue(key) {
+        const value = state.quadruped[key];
+
+        if (key === "position" || key === "rpy") {
+          if (!Array.isArray(value) || value.length === 0) {
+            return "--";
+          }
+          return value.map(function (item) {
+            return Number(item).toFixed(2);
+          }).join(", ");
+        }
+
+        if (key === "timestamp") {
+          return formatDateTime(value);
+        }
+
+        if (key === "mode") {
+          return value ? prettifyLabel(value) : "--";
+        }
+
+        return value == null || value === "" ? "--" : String(value);
+      }
+
+      function statusBadge(value) {
+        const tone = statusTone(value);
+        return "<span class=\"status-tag " + tone + "\">" + escapeHtml(prettifyLabel(value || "--")) + "</span>";
+      }
+
+      function statusTone(value) {
+        const normalized = String(value || "").toLowerCase();
+        if (["completed", "active", "released", "online", "recharged"].includes(normalized)) {
+          return "success";
+        }
+        if (["failed", "cancelled", "critical", "inactive", "offline", "engaged", "blocked"].includes(normalized)) {
+          return "danger";
+        }
+        if (["awaiting_load", "awaiting_unload", "warning", "dispatched", "in_transit"].includes(normalized)) {
+          return "warning";
+        }
+        return "info";
+      }
+
+      async function authorizedFetch(path, options) {
+        const config = Object.assign({
+          method: "GET",
+          headers: buildHeaders()
+        }, options || {});
+
+        const response = await fetch(buildApiUrl(path), config);
+        if (!response.ok) {
+          throw new Error(await extractErrorMessage(response, "Request failed."));
+        }
+        return response;
+      }
+
+      function buildHeaders() {
+        return {
+          "Authorization": "Bearer " + state.token,
+          "Content-Type": "application/json"
+        };
+      }
+
+      async function extractErrorMessage(response, fallbackMessage) {
+        const contentType = response.headers.get("content-type") || "";
+        try {
+          if (contentType.includes("application/json")) {
+            const body = await response.json();
+            if (body && typeof body.detail === "string" && body.detail.trim()) {
+              return body.detail.trim();
+            }
+            if (body && typeof body.message === "string" && body.message.trim()) {
+              return body.message.trim();
+            }
+          } else {
+            const text = await response.text();
+            if (text.trim()) {
+              return text.trim();
+            }
+          }
+        } catch (error) {
+          console.warn("Error response parse skipped", error);
+        }
+        return fallbackMessage;
+      }
+
+      function buildApiUrl(path) {
+        return new URL(path, window.location.origin).toString();
+      }
+
+      function buildWebSocketUrl() {
+        const url = new URL("/ws", window.location.origin);
+        url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        url.searchParams.set("token", state.token);
+        return url.toString();
+      }
+
+      function addEvent(entry) {
+        const severity = normalizeSeverity(entry.severity || "info");
+        const timestampLabel = formatDateTime(entry.timestamp || new Date().toISOString());
+
+        state.events.unshift({
+          severity: severity,
+          message: entry.message || "Event received.",
+          module: entry.module || "system",
+          timestampLabel: timestampLabel
+        });
+
+        state.events = state.events.slice(0, 18);
+        state.lastAlertSeverity = severity;
+        state.lastAlertMessage = entry.message || state.lastAlertMessage;
+        renderBattery();
+        renderEvents();
+      }
+
+      function normalizeSeverity(value) {
+        const normalized = String(value || "info").toLowerCase();
+        if (["critical", "danger", "warning", "success", "info"].includes(normalized)) {
+          return normalized === "danger" ? "critical" : normalized;
+        }
+        if (normalized === "error") {
+          return "critical";
+        }
+        return "info";
+      }
+
+      function eventSeverity(eventName, payload) {
+        if (eventName === "system.alert") {
+          return normalizeSeverity(payload.severity || "critical");
+        }
+        if (["battery.critical", "task.failed", "navigation.failed"].includes(eventName)) {
+          return "critical";
+        }
+        if (["battery.warn", "navigation.blocked"].includes(eventName)) {
+          return "warning";
+        }
+        if (["battery.recharged", "task.completed", "navigation.completed", "estop.released"].includes(eventName)) {
+          return "success";
+        }
+        if (["estop.triggered", "task.cancelled"].includes(eventName)) {
+          return "critical";
+        }
+        return "info";
+      }
+
+      function telemetryChanged(previousState, nextState) {
+        return previousState.connection_ok !== nextState.connection_ok
+          || previousState.mode !== nextState.mode
+          || previousState.active_task_id !== nextState.active_task_id
+          || previousState.battery_pct !== nextState.battery_pct;
+      }
+
+      function telemetryMessage(previousState, nextState) {
+        if (previousState.connection_ok !== nextState.connection_ok) {
+          return nextState.connection_ok === false
+            ? "Quadruped telemetry reports the robot is offline."
+            : "Quadruped telemetry reports the robot is back online.";
+        }
+        if (previousState.mode !== nextState.mode && nextState.mode) {
+          return "Quadruped mode changed to " + prettifyLabel(nextState.mode) + ".";
+        }
+        if (previousState.active_task_id !== nextState.active_task_id) {
+          return "Active task changed to " + (nextState.active_task_id || "none") + ".";
+        }
+        if (previousState.battery_pct !== nextState.battery_pct) {
+          return "Battery telemetry updated to " + formatBattery(nextState.battery_pct) + ".";
+        }
+        return "Quadruped telemetry updated.";
+      }
+
+      function eventMessage(eventName, payload) {
+        if (eventName === "system.alert") {
+          return payload.message || payload.reason || payload.detail || "System alert received.";
+        }
+        if (eventName === "battery.warn") {
+          return "Battery warning. Current battery: " + formatBattery(payload.battery_pct) + ".";
+        }
+        if (eventName === "battery.critical") {
+          return "Battery critical. Current battery: " + formatBattery(payload.battery_pct) + ".";
+        }
+        if (eventName === "battery.recharged") {
+          return "Battery recharged. Current battery: " + formatBattery(payload.battery_pct) + ".";
+        }
+        if (eventName === "navigation.blocked") {
+          return payload.reason || payload.message || "Navigation blocked.";
+        }
+        if (eventName === "navigation.completed") {
+          return payload.message || "Navigation completed.";
+        }
+        if (eventName === "navigation.failed") {
+          return payload.reason || payload.message || "Navigation failed.";
+        }
+        if (eventName === "estop.triggered") {
+          return payload.message || "Emergency stop triggered.";
+        }
+        if (eventName === "estop.released") {
+          return payload.message || "Emergency stop released.";
+        }
+        return payload.message || payload.reason || "Event received.";
+      }
+
+      function taskEventMessage(eventName, payload, taskId) {
+        const id = payload.task_id || taskId || "unknown";
+        const status = payload.status ? " (" + prettifyLabel(payload.status) + ")" : "";
+        if (eventName === "task.submitted") {
+          return "Task " + id + " submitted" + status + ".";
+        }
+        if (eventName === "task.completed") {
+          return "Task " + id + " completed.";
+        }
+        if (eventName === "task.failed") {
+          return "Task " + id + " failed" + optionalReason(payload) + ".";
+        }
+        if (eventName === "task.cancelled") {
+          return "Task " + id + " cancelled" + optionalReason(payload) + ".";
+        }
+        return "Task " + id + " updated" + status + ".";
+      }
+
+      function optionalReason(payload) {
+        const reason = payload.reason || payload.notes || payload.detail;
+        return reason ? " (reason: " + reason + ")" : "";
+      }
+
+      function formatBattery(value) {
+        return value == null ? "unknown" : value + "%";
+      }
+
+      function setConnectionState(text, tone) {
+        elements.connectionText.textContent = text;
+        elements.connectionPill.dataset.tone = tone;
+      }
+
+      function setAuthState(text, tone) {
+        elements.authText.textContent = text;
+        elements.authPill.dataset.tone = tone;
+      }
+
+      function formatDateTime(value) {
+        if (!value) {
+          return "--";
+        }
+
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          return String(value);
+        }
+
+        return parsed.toLocaleString([], {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        });
+      }
+
+      function prettifyLabel(value) {
+        return String(value)
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, function (character) {
+            return character.toUpperCase();
+          });
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+    })();
+  </script>
+</body>
+</html>

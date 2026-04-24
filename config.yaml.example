@@ -1,0 +1,76 @@
+app:
+  name: "sumitomo-quadruped-logistics"
+  environment: "development"
+  timezone: "Asia/Singapore"
+
+quadruped:
+  quadruped_ip: "192.168.234.1"
+  sdk_port: 43988
+  connection_timeout_seconds: 5.0
+  auto_stand_on_startup: false
+
+workstation:
+  local_ip: "0.0.0.0"
+  lan_ip: "127.0.0.1"
+
+database:
+  sqlite_path: "data/quadruped.db"
+  telemetry_retention_hours: 48
+
+routes:
+  routes_file: "data/routes.json"
+  stations_file: "data/stations.json"
+  hot_reload_enabled: true
+
+battery:
+  warn_pct: 30
+  critical_pct: 25
+  resume_pct: 90
+  charging_poll_seconds: 30
+
+heartbeat:
+  interval_seconds: 0.02
+  sdk_timeout_seconds: 3.0
+
+navigation:
+  waypoint_tolerance_m: 0.25
+  heading_tolerance_deg: 10.0
+  max_forward_velocity: 0.35
+  max_yaw_rate: 0.6
+  obstacle_hold_timeout_seconds: 10.0
+  position_source: "odometry"
+
+task_scoring:
+  priority_weight: 100.0
+  recency_weight: 10.0
+  proximity_weight: 20.0
+  direction_bonus: 50.0
+
+logging:
+  level: "INFO"
+  log_dir: "logs"
+  rotating_file_enabled: true
+  max_file_mb: 10
+  backup_count: 5
+  json_output: true
+
+api:
+  host: "0.0.0.0"
+  port: 8080
+  static_ui_dir: "ui"
+  cors_enabled: true
+
+auth:
+  # Replace these placeholder tokens before using this system in production.
+  operator_token: "change-me-operator"
+  qa_token: "change-me-qa"
+  supervisor_token: "change-me-supervisor"
+
+alerts:
+  email_enabled: false
+  smtp_host: null
+  smtp_port: 587
+  smtp_username: null
+  smtp_password: null
+  supervisor_email: null
+  gpio_alert_enabled: false
