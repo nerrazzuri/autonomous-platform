@@ -14,6 +14,7 @@ from api.alerts import get_alert_manager
 from api.auth import require_operator, require_supervisor
 from api.ws_broker import get_ws_broker, websocket_endpoint
 from core.config import get_config
+from core.event_bus import EventName, get_event_bus
 from core.logger import get_logger
 from navigation.route_store import RouteDefinition, RouteNotFoundError, RouteStore, RouteStoreError, Waypoint, get_route_store
 from quadruped.sdk_adapter import SDKAdapter, get_sdk_adapter
@@ -261,6 +262,15 @@ def _build_route_definition(route_id: str, request: UpdateRouteRequest) -> Route
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+def _confirmation_payload(task_id: str, task: Any) -> dict[str, Any]:
+    return {
+        "task_id": task_id,
+        "station_id": task.station_id,
+        "destination_id": task.destination_id,
+        "status": task.status,
+    }
+
+
 def create_app() -> FastAPI:
     config = get_config()
     ui_directory = Path(__file__).resolve().parents[1] / "ui"
@@ -337,6 +347,66 @@ def create_app() -> FastAPI:
         except Exception as exc:
             _raise_task_queue_http_error(exc)
         return task_to_response(task)
+
+    @application.post(
+        "/tasks/{task_id}/confirm-load",
+        response_model=MessageResponse,
+        dependencies=[Depends(require_operator)],
+    )
+    async def confirm_load(
+        task_id: str,
+        task_queue: TaskQueue = Depends(get_task_queue_dep),
+    ) -> MessageResponse:
+        logger.info("REST human load confirmation requested", extra={"task_id": task_id})
+        try:
+            task = await task_queue.get_task(task_id)
+        except Exception as exc:
+            _raise_task_queue_http_error(exc)
+
+        try:
+            await get_event_bus().publish(
+                EventName.HUMAN_CONFIRMED_LOAD,
+                payload=_confirmation_payload(task_id, task),
+                source=__name__,
+                task_id=task_id,
+            )
+        except Exception as exc:
+            logger.exception("REST human load confirmation publish failed", extra={"task_id": task_id})
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to publish load confirmation: {exc}",
+            ) from exc
+        return MessageResponse(message="Load confirmed")
+
+    @application.post(
+        "/tasks/{task_id}/confirm-unload",
+        response_model=MessageResponse,
+        dependencies=[Depends(require_operator)],
+    )
+    async def confirm_unload(
+        task_id: str,
+        task_queue: TaskQueue = Depends(get_task_queue_dep),
+    ) -> MessageResponse:
+        logger.info("REST human unload confirmation requested", extra={"task_id": task_id})
+        try:
+            task = await task_queue.get_task(task_id)
+        except Exception as exc:
+            _raise_task_queue_http_error(exc)
+
+        try:
+            await get_event_bus().publish(
+                EventName.HUMAN_CONFIRMED_UNLOAD,
+                payload=_confirmation_payload(task_id, task),
+                source=__name__,
+                task_id=task_id,
+            )
+        except Exception as exc:
+            logger.exception("REST human unload confirmation publish failed", extra={"task_id": task_id})
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to publish unload confirmation: {exc}",
+            ) from exc
+        return MessageResponse(message="Unload confirmed")
 
     @application.get(
         "/queue/status",

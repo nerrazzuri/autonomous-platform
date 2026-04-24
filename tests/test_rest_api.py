@@ -125,6 +125,14 @@ class FakeTaskQueue:
     async def get_queue_status(self):
         return self.summary
 
+    async def get_task(self, task_id):
+        from tasks.queue import TaskQueueError
+
+        task = self.tasks.get(task_id)
+        if task is None:
+            raise TaskQueueError(f"Task not found: {task_id}")
+        return task
+
 
 class FakeStateMonitor:
     def __init__(self, current_state=None, poll_state=None):
@@ -178,6 +186,25 @@ class FakeRouteStore:
         return route
 
 
+class FakeEventBus:
+    def __init__(self):
+        self.published: list[dict[str, object]] = []
+        self.publish_error: Exception | None = None
+
+    async def publish(self, event_name, payload=None, *, source=None, task_id=None, correlation_id=None):
+        if self.publish_error is not None:
+            raise self.publish_error
+        event = {
+            "event_name": event_name.value if hasattr(event_name, "value") else str(event_name),
+            "payload": dict(payload or {}),
+            "source": source,
+            "task_id": task_id,
+            "correlation_id": correlation_id,
+        }
+        self.published.append(event)
+        return event
+
+
 @pytest.fixture
 def rest_client(monkeypatch: pytest.MonkeyPatch):
     from fastapi.testclient import TestClient
@@ -198,15 +225,17 @@ def rest_client(monkeypatch: pytest.MonkeyPatch):
     state_monitor = FakeStateMonitor()
     sdk = FakeSDKAdapter()
     route_store = FakeRouteStore()
+    event_bus = FakeEventBus()
 
     monkeypatch.setattr(auth_module, "get_config", lambda: config)
     monkeypatch.setattr(rest_module, "get_task_queue_dep", lambda: queue)
     monkeypatch.setattr(rest_module, "get_state_monitor_dep", lambda: state_monitor)
     monkeypatch.setattr(rest_module, "get_sdk_adapter_dep", lambda: sdk)
     monkeypatch.setattr(rest_module, "get_route_store_dep", lambda: route_store)
+    monkeypatch.setattr(rest_module, "get_event_bus", lambda: event_bus)
 
     app = rest_module.create_app()
-    return TestClient(app), queue, state_monitor, sdk, route_store, rest_module
+    return TestClient(app), queue, state_monitor, sdk, route_store, event_bus, rest_module
 
 
 def test_health_endpoint(rest_client) -> None:
@@ -307,6 +336,90 @@ def test_cancel_task_invalid_transition_returns_409(rest_client) -> None:
     assert response.status_code == 409
 
 
+def test_confirm_load_success_publishes_event(rest_client) -> None:
+    client, queue, *_ , event_bus, _rest_module = rest_client
+    queue.tasks["task-1"] = make_task_record("task-1", station_id="A", destination_id="QA", status="awaiting_load")
+
+    response = client.post("/tasks/task-1/confirm-load", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Load confirmed"}
+    assert event_bus.published == [
+        {
+            "event_name": "human.confirmed_load",
+            "payload": {
+                "task_id": "task-1",
+                "station_id": "A",
+                "destination_id": "QA",
+                "status": "awaiting_load",
+            },
+            "source": "api.rest",
+            "task_id": "task-1",
+            "correlation_id": None,
+        }
+    ]
+
+
+def test_confirm_unload_success_publishes_event(rest_client) -> None:
+    client, queue, *_ , event_bus, _rest_module = rest_client
+    queue.tasks["task-2"] = make_task_record("task-2", station_id="A", destination_id="QA", status="awaiting_unload")
+
+    response = client.post("/tasks/task-2/confirm-unload", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Unload confirmed"}
+    assert event_bus.published == [
+        {
+            "event_name": "human.confirmed_unload",
+            "payload": {
+                "task_id": "task-2",
+                "station_id": "A",
+                "destination_id": "QA",
+                "status": "awaiting_unload",
+            },
+            "source": "api.rest",
+            "task_id": "task-2",
+            "correlation_id": None,
+        }
+    ]
+
+
+def test_confirm_load_not_found_returns_404(rest_client) -> None:
+    client, *_ = rest_client
+
+    response = client.post("/tasks/task-404/confirm-load", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 404
+
+
+def test_confirm_unload_not_found_returns_404(rest_client) -> None:
+    client, *_ = rest_client
+
+    response = client.post("/tasks/task-404/confirm-unload", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 404
+
+
+def test_confirm_load_requires_auth(rest_client) -> None:
+    client, queue, *_ = rest_client
+    queue.tasks["task-1"] = make_task_record("task-1")
+
+    response = client.post("/tasks/task-1/confirm-load")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication required"
+
+
+def test_confirm_unload_requires_auth(rest_client) -> None:
+    client, queue, *_ = rest_client
+    queue.tasks["task-1"] = make_task_record("task-1")
+
+    response = client.post("/tasks/task-1/confirm-unload")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication required"
+
+
 def test_queue_status(rest_client) -> None:
     client, queue, *_ = rest_client
     from tasks.queue import QueueSummary
@@ -366,7 +479,7 @@ def test_quadruped_status_when_no_state_available(rest_client) -> None:
 
 
 def test_estop_success(rest_client) -> None:
-    client, _, _, sdk, _ , _ = rest_client
+    client, _, _, sdk, *_ = rest_client
 
     response = client.post("/estop", headers=build_auth_header(TEST_OPERATOR_TOKEN))
 
@@ -376,7 +489,7 @@ def test_estop_success(rest_client) -> None:
 
 
 def test_estop_failure_returns_503(rest_client) -> None:
-    client, _, _, sdk, _ , _ = rest_client
+    client, _, _, sdk, *_ = rest_client
     sdk.passive_result = False
 
     response = client.post("/estop", headers=build_auth_header(TEST_OPERATOR_TOKEN))
@@ -385,7 +498,7 @@ def test_estop_failure_returns_503(rest_client) -> None:
 
 
 def test_estop_release_success(rest_client) -> None:
-    client, _, _, sdk, _ , _ = rest_client
+    client, _, _, sdk, *_ = rest_client
 
     response = client.post("/estop/release", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
 
@@ -404,7 +517,7 @@ def test_estop_release_rejects_operator_token(rest_client) -> None:
 
 
 def test_get_routes(rest_client) -> None:
-    client, _, _, _, route_store, _ = rest_client
+    client, _, _, _, route_store, *_ = rest_client
     route_store.routes["QA_TO_A"] = replace(make_route("QA_TO_A"), origin_id="QA", destination_id="A")
 
     response = client.get("/routes", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
@@ -440,7 +553,7 @@ def test_get_route_not_found_returns_404(rest_client) -> None:
 
 
 def test_put_route_updates_route(rest_client) -> None:
-    client, _, _, _, route_store, _ = rest_client
+    client, _, _, _, route_store, *_ = rest_client
 
     response = client.put(
         "/routes/A_TO_QA",

@@ -409,6 +409,20 @@
       align-content: start;
     }
 
+    .map-card {
+      padding: 22px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .floormap-host {
+      min-height: 320px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+    }
+
     .events-list {
       display: grid;
       gap: 10px;
@@ -683,6 +697,16 @@
       </div>
 
       <aside class="side-column">
+        <article class="panel map-card">
+          <div class="card-head">
+            <div>
+              <div class="card-kicker">Floor Position</div>
+              <h2 class="card-title">Quadruped Floor Map</h2>
+            </div>
+          </div>
+          <div class="floormap-host" id="floormap-container"></div>
+        </article>
+
         <article class="panel events-panel">
           <div class="card-head">
             <div>
@@ -696,6 +720,7 @@
     </section>
   </main>
 
+  <script src="/ui/floormap.js"></script>
   <script>
     (function () {
       const state = {
@@ -711,6 +736,7 @@
         estopState: "Unknown",
         lastAlertSeverity: "info",
         lastAlertMessage: "No active alert.",
+        floorMap: null,
         quadruped: {
           mode: null,
           battery_pct: null,
@@ -752,6 +778,7 @@
         queueMetrics: document.getElementById("queue-metrics"),
         taskTableBody: document.getElementById("task-table-body"),
         routeTableBody: document.getElementById("route-table-body"),
+        floorMapContainer: document.getElementById("floormap-container"),
         eventList: document.getElementById("event-list")
       };
 
@@ -788,6 +815,7 @@
       function init() {
         bindEvents();
         bootstrapFromQuery();
+        initFloorMap();
         renderAll();
 
         if (!state.hasToken) {
@@ -1183,6 +1211,7 @@
         elements.quadrupedMetrics.innerHTML = quadrupedMetrics.map(function (entry) {
           return metricTemplate(entry[0], formatQuadrupedValue(entry[1]));
         }).join("");
+        renderFloorMap();
       }
 
       function renderBattery() {
@@ -1266,6 +1295,36 @@
             + "<div class=\"event-message\">" + escapeHtml(entry.message) + "</div>"
             + "</article>";
         }).join("");
+      }
+
+      function initFloorMap() {
+        if (!elements.floorMapContainer || !window.FloorMap || typeof window.FloorMap.create !== "function") {
+          return;
+        }
+
+        state.floorMap = window.FloorMap.create(elements.floorMapContainer, {
+          width: 560,
+          height: 320,
+          minX: -10,
+          maxX: 10,
+          minY: -10,
+          maxY: 10,
+          title: "Quadruped Position"
+        });
+      }
+
+      function renderFloorMap() {
+        if (!state.floorMap) {
+          return;
+        }
+
+        const position = state.quadruped.position;
+        if (Array.isArray(position) && position.length >= 2) {
+          state.floorMap.updatePosition(position);
+          return;
+        }
+
+        state.floorMap.clear();
       }
 
       function updateControls() {
