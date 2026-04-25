@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 
 
 def test_supervisor_html_exists_with_required_markers() -> None:
-    supervisor_html = ROOT / "ui" / "supervisor.html"
+    supervisor_html = ROOT / "apps" / "logistics" / "ui" / "supervisor.html"
 
     assert supervisor_html.exists()
 
@@ -32,6 +32,11 @@ def test_supervisor_html_exists_with_required_markers() -> None:
 def test_rest_app_serves_supervisor_html() -> None:
     import api.rest as rest_module
 
+    async def noop() -> None:
+        return None
+
+    rest_module.startup_system = noop
+    rest_module.shutdown_system = noop
     client = TestClient(rest_module.create_app())
 
     response = client.get("/ui/supervisor.html")

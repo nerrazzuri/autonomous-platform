@@ -238,6 +238,8 @@ def test_websocket_endpoint_accepts_valid_token(ws_module, monkeypatch: pytest.M
 
     monkeypatch.setattr(module, "get_ws_broker", lambda: broker)
     monkeypatch.setattr(rest_module, "get_ws_broker", lambda: broker)
+    monkeypatch.setattr(rest_module, "startup_system", _noop_async)
+    monkeypatch.setattr(rest_module, "shutdown_system", _noop_async)
 
     app = rest_module.create_app()
 
@@ -248,3 +250,6 @@ def test_websocket_endpoint_accepts_valid_token(ws_module, monkeypatch: pytest.M
 
     assert broker.client_count() == 0
 
+
+async def _noop_async() -> None:
+    return None

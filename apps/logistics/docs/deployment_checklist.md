@@ -30,12 +30,18 @@ Practical checklist for preparing, deploying, and validating the Phase 1 Sumitom
 
 - Run the full automated test suite:
   ```bash
-  .venv/bin/python -m pytest -q
+  uv run pytest -q
   ```
 - Start the backend:
   ```bash
+  uv run python main.py
+  ```
+- Alternative backend start command if needed:
+  ```bash
   .venv/bin/python main.py
   ```
+- Confirm the refactored Uvicorn app target is:
+  `apps.logistics.api.rest:app`
 - Confirm the health endpoint responds:
   `http://<workstation-host>:8080/health`
 - Open the supervisor UI:
@@ -57,8 +63,29 @@ Practical checklist for preparing, deploying, and validating the Phase 1 Sumitom
 - Check that the supervisor alerts panel updates when alerts are raised.
 - Run the manual HTTP smoke script:
   ```bash
-  ./scripts/manual_e2e_smoke.sh
+  ./apps/logistics/scripts/manual_e2e_smoke.sh
   ```
+- Note that root `scripts/manual_e2e_smoke.sh` is only a compatibility wrapper around the canonical app script.
+
+## 4a. Post-Refactor Runtime Smoke Test
+
+1. Start backend:
+   ```bash
+   uv run python main.py
+   ```
+2. Check health:
+   ```bash
+   curl http://localhost:8080/health
+   ```
+3. Open:
+   - `/ui/supervisor.html?token=<supervisor-token>`
+   - `/ui/operator.html?station_id=A&token=<operator-token>`
+   - `/ui/kiosk.html?station_id=A&token=<operator-token>`
+4. Run manual smoke script:
+   ```bash
+   ./apps/logistics/scripts/manual_e2e_smoke.sh
+   ```
+5. Root `scripts/manual_e2e_smoke.sh` remains a compatibility wrapper only.
 
 ## 5. Route Commissioning Checklist
 

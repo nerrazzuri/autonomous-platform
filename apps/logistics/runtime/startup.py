@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+"""Logistics runtime startup wiring built on top of the shared platform runtime."""
+
+from collections.abc import Awaitable, Callable
+
+from apps.logistics.tasks.battery_manager import get_battery_manager
+from apps.logistics.tasks.dispatcher import get_dispatcher
+from apps.logistics.tasks.watchdog import get_watchdog
+from shared.core.config import get_config
+from shared.core.logger import get_logger
+from shared.runtime import base_startup
+
+
+logger = get_logger(__name__)
+
+
+async def _run_shutdown_steps(steps: list[tuple[str, Callable[[], Awaitable[None]]]]) -> list[tuple[str, str]]:
+    errors: list[tuple[str, str]] = []
+    for name, stop_callable in steps:
+        try:
+            await stop_callable()
+        except Exception as exc:
+            errors.append((name, str(exc)))
+            logger.exception("Shutdown step failed", extra={"component": name})
+    return errors
+
+
+async def startup_system() -> None:
+    dispatcher = get_dispatcher()
+    battery_manager = get_battery_manager()
+    watchdog = get_watchdog()
+
+    await base_startup.startup_system()
+
+    rollback_steps: list[tuple[str, Callable[[], Awaitable[None]]]] = []
+    try:
+        await dispatcher.start()
+        rollback_steps.append(("dispatcher", dispatcher.stop))
+
+        await battery_manager.start()
+        rollback_steps.append(("battery_manager", battery_manager.stop))
+
+        await watchdog.start()
+        rollback_steps.append(("watchdog", watchdog.stop))
+    except Exception:
+        await _run_shutdown_steps(list(reversed(rollback_steps)))
+        await base_startup.shutdown_system()
+        raise
+
+    logger.info("Logistics runtime startup complete")
+
+
+async def shutdown_system() -> None:
+    shutdown_steps: list[tuple[str, Callable[[], Awaitable[None]]]] = [
+        ("watchdog", get_watchdog().stop),
+        ("battery_manager", get_battery_manager().stop),
+        ("dispatcher", get_dispatcher().stop),
+    ]
+
+    errors = await _run_shutdown_steps(shutdown_steps)
+    await base_startup.shutdown_system()
+    logger.info("Logistics runtime shutdown complete", extra={"error_count": len(errors)})
+
+
+def create_uvicorn_config() -> dict:
+    config = get_config()
+    return {
+        "app": "apps.logistics.api.rest:app",
+        "host": config.api.host,
+        "port": config.api.port,
+        "reload": False,
+    }
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run(**create_uvicorn_config())
+
+
+__all__ = ["create_uvicorn_config", "main", "shutdown_system", "startup_system"]

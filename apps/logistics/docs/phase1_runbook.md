@@ -52,20 +52,33 @@ Edit `config.yaml` before running the backend. At minimum, review:
 Run the full test suite with:
 
 ```bash
+uv run pytest -q
+```
+
+Alternative if you are using the checked-in virtual environment directly:
+
+```bash
 .venv/bin/python -m pytest -q
 ```
 
-Current Phase 1 baseline: `362` tests passing. If your result is lower, treat that as a setup or regression signal before proceeding with manual smoke checks.
+Treat any failing result as a setup or regression signal before proceeding with manual smoke checks.
 
 ## Start Backend
 
 Start the backend with:
 
 ```bash
+uv run python main.py
+```
+
+Alternative:
+
+```bash
 .venv/bin/python main.py
 ```
 
 Default API binding comes from `config.yaml` and is `0.0.0.0:8080` in the example config.
+The FastAPI / Uvicorn app target after the shared/apps refactor is `apps.logistics.api.rest:app`.
 
 Useful endpoints and UI URLs:
 
@@ -73,6 +86,26 @@ Useful endpoints and UI URLs:
 - Operator UI: `http://localhost:8080/ui/operator.html?station_id=A&token=<operator-token>`
 - Supervisor UI: `http://localhost:8080/ui/supervisor.html?token=<supervisor-token>`
 - Kiosk UI: `http://localhost:8080/ui/kiosk.html?station_id=A&token=<operator-token>`
+
+## Post-Refactor Runtime Smoke Test
+
+1. Start the backend:
+   ```bash
+   uv run python main.py
+   ```
+2. Check health:
+   ```bash
+   curl http://localhost:8080/health
+   ```
+3. Open:
+   - `/ui/supervisor.html?token=<supervisor-token>`
+   - `/ui/operator.html?station_id=A&token=<operator-token>`
+   - `/ui/kiosk.html?station_id=A&token=<operator-token>`
+4. Run the canonical manual smoke script from the repo root:
+   ```bash
+   ./apps/logistics/scripts/manual_e2e_smoke.sh
+   ```
+5. Root `scripts/manual_e2e_smoke.sh` is only a compatibility wrapper around `apps/logistics/scripts/manual_e2e_smoke.sh`.
 
 ## Config Notes
 
@@ -116,7 +149,7 @@ Use this checklist after setup:
 6. Verify queue status updates are visible in the UI after task submission.
 7. Trigger the supervisor e-stop and confirm the endpoint responds without crashing the backend.
 8. Confirm the route list loads in the supervisor dashboard.
-9. Run `.venv/bin/python -m pytest -q` and confirm the integration tests pass along with the rest of the suite.
+9. Run `uv run pytest -q` and confirm the integration tests pass along with the rest of the suite.
 
 ## Known Limitations
 

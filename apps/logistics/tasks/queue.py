@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from math import sqrt
 from typing import Any
 from uuid import uuid4
 
@@ -11,6 +12,7 @@ from shared.core.config import get_config
 from shared.core.database import Database, DatabaseError, TaskRecord, get_database
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
+from shared.navigation.route_store import get_route_store
 
 
 logger = get_logger(__name__)
@@ -72,6 +74,7 @@ class TaskQueue:
     def __init__(
         self,
         database: Database | None = None,
+        station_provider: Any | None = None,
         priority_weight: float | None = None,
         recency_weight: float | None = None,
         proximity_weight: float | None = None,
@@ -79,6 +82,7 @@ class TaskQueue:
     ) -> None:
         config = get_config()
         self._database = database or get_database()
+        self._station_provider = station_provider
         self._priority_weight = (
             config.task_scoring.priority_weight if priority_weight is None else priority_weight
         )
@@ -175,7 +179,7 @@ class TaskQueue:
         except DatabaseError as exc:
             raise TaskQueueError(str(exc)) from exc
 
-        scored_tasks = [self._score_task(task, robot_position=robot_position) for task in queued_tasks]
+        scored_tasks = [await self._score_task(task, robot_position=robot_position) for task in queued_tasks]
         scored_tasks.sort(key=lambda item: item.score, reverse=True)
         return scored_tasks
 
@@ -249,27 +253,61 @@ class TaskQueue:
             cancelled=counts["cancelled"],
         )
 
-    def _score_task(self, task: TaskRecord, robot_position: tuple[float, float] | None = None) -> ScoredTask:
+    async def _score_task(self, task: TaskRecord, robot_position: tuple[float, float] | None = None) -> ScoredTask:
         created_at = datetime.fromisoformat(task.created_at)
         age_seconds = max((self._utc_now() - created_at).total_seconds(), 0.0)
-        priority_component = self._priority_weight * float(task.priority)
-        recency_component = self._recency_weight * (1.0 / max(age_seconds, 1.0))
-        proximity_component = self._proximity_weight * 0.0
+        priority_component = float(task.priority)
+        recency_component = 1.0 / max(age_seconds, 1.0)
+        proximity_component = 0.0
+        distance_to_station = await self._get_distance_to_station(task.station_id, robot_position=robot_position)
+        if distance_to_station is not None:
+            proximity_component = 1.0 / max(distance_to_station, 1.0)
         direction_bonus_component = (
             self._direction_bonus
             if self._last_completed_destination_id is not None
             and task.destination_id == self._last_completed_destination_id
             else 0.0
         )
+
         components = {
-            "priority": priority_component,
-            "recency": recency_component,
-            "proximity": proximity_component,
-            "direction_bonus": direction_bonus_component,
+            "priority_component": priority_component,
+            "recency_component": recency_component,
+            "proximity_component": proximity_component,
+            "direction_bonus_component": direction_bonus_component,
         }
-        score = sum(components.values())
+        if distance_to_station is not None:
+            components["distance_to_station"] = distance_to_station
+        score = (
+            self._priority_weight * priority_component
+            + self._recency_weight * recency_component
+            + self._proximity_weight * proximity_component
+            + direction_bonus_component
+        )
         logger.debug("Task scored", extra={"task_id": task.id, "score": score, **components})
         return ScoredTask(task=task, score=score, components=components)
+
+    async def _get_distance_to_station(
+        self,
+        station_id: str,
+        *,
+        robot_position: tuple[float, float] | None,
+    ) -> float | None:
+        if robot_position is None or self._station_provider is None:
+            return None
+
+        try:
+            station = await self._station_provider.get_station(station_id)
+        except Exception:
+            logger.debug("Task scoring station lookup unavailable", extra={"station_id": station_id})
+            return None
+
+        station_x = getattr(station, "x", None)
+        station_y = getattr(station, "y", None)
+        if station_x is None or station_y is None:
+            return None
+
+        robot_x, robot_y = robot_position
+        return sqrt((robot_x - station_x) ** 2 + (robot_y - station_y) ** 2)
 
     async def _transition_task(self, task_id: str, new_status: str, notes: str | None) -> TaskRecord:
         self._validate_non_empty("task_id", task_id)
@@ -312,7 +350,7 @@ class TaskQueue:
             logger.debug("Task queue event publish skipped", extra={"event_name": event_name.value})
 
 
-task_queue = TaskQueue()
+task_queue = TaskQueue(station_provider=get_route_store())
 
 
 def get_task_queue() -> TaskQueue:

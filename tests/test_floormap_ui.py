@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
 
 
 def test_floormap_js_exists_with_required_api_markers() -> None:
-    floormap_js = ROOT / "ui" / "floormap.js"
+    floormap_js = ROOT / "apps" / "logistics" / "ui" / "floormap.js"
 
     assert floormap_js.exists()
 
@@ -25,7 +25,7 @@ def test_floormap_js_exists_with_required_api_markers() -> None:
 
 
 def test_supervisor_html_references_floormap_script() -> None:
-    supervisor_html = ROOT / "ui" / "supervisor.html"
+    supervisor_html = ROOT / "apps" / "logistics" / "ui" / "supervisor.html"
 
     assert supervisor_html.exists()
 

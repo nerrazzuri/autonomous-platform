@@ -96,8 +96,14 @@ def _create_test_app(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(ws_module, "get_ws_broker", lambda: ws_broker)
     monkeypatch.setattr(rest_module, "get_ws_broker", lambda: ws_broker)
     monkeypatch.setattr(rest_module, "get_alert_manager", lambda: alert_manager)
+    monkeypatch.setattr(rest_module, "startup_system", _noop_async)
+    monkeypatch.setattr(rest_module, "shutdown_system", _noop_async)
 
     return rest_module.create_app()
+
+
+async def _noop_async() -> None:
+    return None
 
 
 @pytest.mark.asyncio
@@ -105,22 +111,28 @@ async def test_full_startup_and_shutdown_without_hardware(monkeypatch: pytest.Mo
     calls: list[str] = []
     sys.modules.pop("main", None)
     main_module = importlib.import_module("main")
+    base_startup_module = main_module.base_startup
 
-    monkeypatch.setattr(main_module, "setup_logging", lambda: calls.append("setup_logging"))
+    monkeypatch.setattr(base_startup_module, "setup_logging", lambda: calls.append("setup_logging"))
     monkeypatch.setattr(
-        main_module,
+        base_startup_module,
         "get_config",
         lambda: SimpleNamespace(quadruped=SimpleNamespace(auto_stand_on_startup=False)),
     )
-    monkeypatch.setattr(main_module, "get_database", lambda: DatabaseStub(calls))
-    monkeypatch.setattr(main_module, "get_route_store", lambda: RouteStoreStub(calls))
-    monkeypatch.setattr(main_module, "get_event_bus", lambda: LifecycleStub("event_bus", calls))
-    monkeypatch.setattr(main_module, "get_heartbeat_controller", lambda: LifecycleStub("heartbeat", calls))
-    monkeypatch.setattr(main_module, "get_state_monitor", lambda: LifecycleStub("state_monitor", calls))
-    monkeypatch.setattr(main_module, "get_obstacle_detector", lambda: LifecycleStub("obstacle", calls))
+    monkeypatch.setattr(base_startup_module, "get_database", lambda: DatabaseStub(calls))
+    monkeypatch.setattr(base_startup_module, "get_route_store", lambda: RouteStoreStub(calls))
+    monkeypatch.setattr(base_startup_module, "get_event_bus", lambda: LifecycleStub("event_bus", calls))
+    monkeypatch.setattr(base_startup_module, "get_heartbeat_controller", lambda: LifecycleStub("heartbeat", calls))
+    monkeypatch.setattr(base_startup_module, "get_state_monitor", lambda: LifecycleStub("state_monitor", calls))
+    monkeypatch.setattr(base_startup_module, "get_obstacle_detector", lambda: LifecycleStub("obstacle", calls))
     monkeypatch.setattr(main_module, "get_dispatcher", lambda: LifecycleStub("dispatcher", calls))
     monkeypatch.setattr(main_module, "get_battery_manager", lambda: LifecycleStub("battery", calls))
     monkeypatch.setattr(main_module, "get_watchdog", lambda: LifecycleStub("watchdog", calls))
+    monkeypatch.setattr(
+        base_startup_module,
+        "get_sdk_adapter",
+        lambda: SimpleNamespace(connect=_record_async(calls, "sdk.connect"), stand_up=_record_true_async(calls, "sdk.stand_up")),
+    )
 
     await main_module.startup_system()
     await main_module.shutdown_system()
@@ -131,6 +143,21 @@ async def test_full_startup_and_shutdown_without_hardware(monkeypatch: pytest.Mo
     assert "start:event_bus" in calls
     assert "stop:event_bus" in calls
     assert calls[-1] == "database.close"
+
+
+def _record_async(calls: list[str], name: str):
+    async def _inner():
+        calls.append(name)
+
+    return _inner
+
+
+def _record_true_async(calls: list[str], name: str):
+    async def _inner():
+        calls.append(name)
+        return True
+
+    return _inner
 
 
 def test_rest_health_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -19,6 +19,8 @@ from shared.core.logger import get_logger
 from shared.navigation.route_store import RouteDefinition, RouteNotFoundError, RouteStore, RouteStoreError, Waypoint, get_route_store
 from shared.quadruped.sdk_adapter import SDKAdapter, get_sdk_adapter
 from shared.quadruped.state_monitor import QuadrupedState, StateMonitor, get_state_monitor
+from apps.logistics.runtime.startup import shutdown_system, startup_system
+from apps.logistics.tasks.dispatcher import Dispatcher, get_dispatcher
 from apps.logistics.tasks.queue import (
     InvalidTaskTransitionError,
     QueueSummary,
@@ -126,6 +128,10 @@ def get_state_monitor_dep() -> StateMonitor:
     return get_state_monitor()
 
 
+def get_dispatcher_dep() -> Dispatcher:
+    return get_dispatcher()
+
+
 def get_sdk_adapter_dep() -> SDKAdapter:
     return get_sdk_adapter()
 
@@ -163,7 +169,10 @@ def queue_summary_to_response(summary: QueueSummary) -> QueueStatusResponse:
     )
 
 
-def state_to_response(state: QuadrupedState | None) -> QuadrupedStatusResponse:
+def state_to_response(
+    state: QuadrupedState | None,
+    active_task_id: str | None = None,
+) -> QuadrupedStatusResponse:
     if state is None:
         return QuadrupedStatusResponse(
             battery_pct=None,
@@ -173,7 +182,7 @@ def state_to_response(state: QuadrupedState | None) -> QuadrupedStatusResponse:
             connection_ok=None,
             mode=None,
             timestamp=None,
-            active_task_id=None,
+            active_task_id=active_task_id,
         )
     return QuadrupedStatusResponse(
         battery_pct=state.battery_pct,
@@ -183,7 +192,7 @@ def state_to_response(state: QuadrupedState | None) -> QuadrupedStatusResponse:
         connection_ok=state.connection_ok,
         mode=state.mode.value,
         timestamp=state.timestamp.isoformat(),
-        active_task_id=None,
+        active_task_id=active_task_id,
     )
 
 
@@ -278,6 +287,7 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        await startup_system()
         await get_ws_broker().start()
         await get_alert_manager().start()
         try:
@@ -285,6 +295,7 @@ def create_app() -> FastAPI:
         finally:
             await get_alert_manager().stop()
             await get_ws_broker().stop()
+            await shutdown_system()
 
     application = FastAPI(title=config.app.name, lifespan=lifespan)
     application.add_api_websocket_route("/ws", websocket_endpoint)
@@ -430,6 +441,7 @@ def create_app() -> FastAPI:
     )
     async def quadruped_status(
         state_monitor: StateMonitor = Depends(get_state_monitor_dep),
+        dispatcher: Dispatcher = Depends(get_dispatcher_dep),
     ) -> QuadrupedStatusResponse:
         try:
             state = await state_monitor.get_current_state()
@@ -438,7 +450,13 @@ def create_app() -> FastAPI:
         except Exception:
             logger.exception("REST quadruped status fetch failed")
             state = None
-        return state_to_response(state)
+        active_task_id: str | None = None
+        try:
+            dispatch_state = await dispatcher.get_state()
+            active_task_id = dispatch_state.active_task_id
+        except Exception as exc:
+            logger.warning("REST dispatcher status fetch failed", extra={"error": str(exc)})
+        return state_to_response(state, active_task_id=active_task_id)
 
     @application.post(
         "/estop",
@@ -550,6 +568,7 @@ __all__ = [
     "UpdateRouteRequest",
     "app",
     "create_app",
+    "get_dispatcher_dep",
     "get_route_store_dep",
     "get_sdk_adapter_dep",
     "get_state_monitor_dep",

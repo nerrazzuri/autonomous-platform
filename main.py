@@ -1,4 +1,4 @@
-from shared.runtime import startup as _impl
+from apps.logistics.runtime import startup as _impl
 import sys as _sys
 
 if __name__ == "__main__":

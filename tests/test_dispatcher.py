@@ -5,6 +5,7 @@ import sys
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -166,6 +167,17 @@ class FakeStateMonitor:
         return self.poll_state
 
 
+class FakeStationProvider:
+    def __init__(self, stations: dict[str, object]) -> None:
+        self.stations = stations
+
+    async def get_station(self, station_id: str):
+        station = self.stations.get(station_id)
+        if station is None:
+            raise LookupError(f"station not found: {station_id}")
+        return station
+
+
 @pytest_asyncio.fixture
 async def dispatcher_env(monkeypatch: pytest.MonkeyPatch):
     from core.event_bus import EventBus
@@ -279,6 +291,47 @@ async def test_dispatch_once_dispatches_task_and_calls_navigator(dispatcher_env)
     assert navigator.calls == [("A", "QA", task.id)]
     assert queue.tasks[task.id].status == "completed"
     assert queue.robot_positions[-1] == (1.0, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_once_uses_station_provider_backed_queue_scoring(
+    dispatcher_env,
+    tmp_path: Path,
+) -> None:
+    dispatcher_module, _ = dispatcher_env
+    from core.database import Database
+    import tasks.queue as queue_module
+
+    database = Database(tmp_path / "dispatcher-queue.db")
+    queue = queue_module.TaskQueue(
+        database=database,
+        station_provider=FakeStationProvider(
+            {
+                "A": SimpleNamespace(id="A", x=1.0, y=2.0),
+                "B": SimpleNamespace(id="B", x=50.0, y=50.0),
+            }
+        ),
+        priority_weight=0.0,
+        recency_weight=0.0,
+        proximity_weight=100.0,
+        direction_bonus=0.0,
+    )
+    near_task = await queue.submit_task("A", "QA")
+    await queue.submit_task("B", "QA")
+    navigator = FakeNavigator()
+    dispatcher = dispatcher_module.Dispatcher(
+        task_queue=queue,
+        navigator=navigator,
+        state_monitor=FakeStateMonitor(state=make_state()),
+    )
+
+    try:
+        processed = await dispatcher.dispatch_once()
+    finally:
+        await database.close()
+
+    assert processed is True
+    assert navigator.calls == [("A", "QA", near_task.id)]
 
 
 @pytest.mark.asyncio

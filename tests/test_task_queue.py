@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import sys
+import importlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -11,6 +13,19 @@ import pytest_asyncio
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+class FakeStationProvider:
+    def __init__(self, stations: dict[str, object] | None = None) -> None:
+        self.stations = stations or {}
+
+    async def get_station(self, station_id: str):
+        station = self.stations.get(station_id)
+        if isinstance(station, Exception):
+            raise station
+        if station is None:
+            raise LookupError(f"station not found: {station_id}")
+        return station
 
 
 @pytest_asyncio.fixture
@@ -149,7 +164,7 @@ async def test_priority_affects_scoring(task_queue_env) -> None:
     scored = await queue.get_scored_candidates()
 
     assert scored[0].task.id == high.id
-    assert scored[0].components["priority"] > scored[1].components["priority"]
+    assert scored[0].components["priority_component"] > scored[1].components["priority_component"]
     assert scored[1].task.id == low.id
 
 
@@ -204,8 +219,134 @@ async def test_direction_bonus_applies_after_completion(task_queue_env) -> None:
     scored = await queue.get_scored_candidates()
 
     assert scored[0].task.id == same_destination.id
-    assert scored[0].components["direction_bonus"] == 25.0
+    assert scored[0].components["direction_bonus_component"] == 25.0
     assert scored[1].task.id == other_destination.id
+
+
+@pytest.mark.asyncio
+async def test_proximity_component_zero_without_station_provider(task_queue_env) -> None:
+    _, database, _, queue_module = task_queue_env
+    queue = queue_module.TaskQueue(
+        database=database,
+        priority_weight=0.0,
+        recency_weight=0.0,
+        proximity_weight=10.0,
+        direction_bonus=0.0,
+    )
+    await queue.submit_task("A", "QA")
+
+    scored = await queue.get_scored_candidates(robot_position=(0.0, 0.0))
+
+    assert scored[0].components["proximity_component"] == 0.0
+    assert "distance_to_station" not in scored[0].components
+
+
+@pytest.mark.asyncio
+async def test_proximity_component_zero_without_robot_position(task_queue_env) -> None:
+    _, database, _, queue_module = task_queue_env
+    queue = queue_module.TaskQueue(
+        database=database,
+        station_provider=FakeStationProvider(
+            {"A": SimpleNamespace(id="A", x=1.0, y=1.0)}
+        ),
+        priority_weight=0.0,
+        recency_weight=0.0,
+        proximity_weight=10.0,
+        direction_bonus=0.0,
+    )
+    await queue.submit_task("A", "QA")
+
+    scored = await queue.get_scored_candidates()
+
+    assert scored[0].components["proximity_component"] == 0.0
+    assert "distance_to_station" not in scored[0].components
+
+
+@pytest.mark.asyncio
+async def test_closer_station_scores_higher_when_station_provider_available(task_queue_env) -> None:
+    _, database, _, queue_module = task_queue_env
+    queue = queue_module.TaskQueue(
+        database=database,
+        station_provider=FakeStationProvider(
+            {
+                "A": SimpleNamespace(id="A", x=1.0, y=0.0),
+                "B": SimpleNamespace(id="B", x=10.0, y=0.0),
+            }
+        ),
+        priority_weight=0.0,
+        recency_weight=0.0,
+        proximity_weight=100.0,
+        direction_bonus=0.0,
+    )
+    near_task = await queue.submit_task("A", "QA")
+    far_task = await queue.submit_task("B", "QA")
+
+    scored = await queue.get_scored_candidates(robot_position=(0.0, 0.0))
+
+    assert [candidate.task.id for candidate in scored][:2] == [near_task.id, far_task.id]
+    assert scored[0].components["proximity_component"] > scored[1].components["proximity_component"]
+
+
+@pytest.mark.asyncio
+async def test_missing_station_does_not_crash_scoring(task_queue_env) -> None:
+    _, database, _, queue_module = task_queue_env
+    queue = queue_module.TaskQueue(
+        database=database,
+        station_provider=FakeStationProvider(),
+        priority_weight=0.0,
+        recency_weight=0.0,
+        proximity_weight=10.0,
+        direction_bonus=0.0,
+    )
+    task = await queue.submit_task("A", "QA")
+
+    scored = await queue.get_scored_candidates(robot_position=(0.0, 0.0))
+
+    assert scored[0].task.id == task.id
+    assert scored[0].components["proximity_component"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_station_without_coordinates_does_not_crash_scoring(task_queue_env) -> None:
+    _, database, _, queue_module = task_queue_env
+    queue = queue_module.TaskQueue(
+        database=database,
+        station_provider=FakeStationProvider(
+            {"A": SimpleNamespace(id="A", x=None, y=None)}
+        ),
+        priority_weight=0.0,
+        recency_weight=0.0,
+        proximity_weight=10.0,
+        direction_bonus=0.0,
+    )
+    task = await queue.submit_task("A", "QA")
+
+    scored = await queue.get_scored_candidates(robot_position=(0.0, 0.0))
+
+    assert scored[0].task.id == task.id
+    assert scored[0].components["proximity_component"] == 0.0
+    assert "distance_to_station" not in scored[0].components
+
+
+@pytest.mark.asyncio
+async def test_components_include_distance_when_available(task_queue_env) -> None:
+    _, database, _, queue_module = task_queue_env
+    queue = queue_module.TaskQueue(
+        database=database,
+        station_provider=FakeStationProvider(
+            {"A": SimpleNamespace(id="A", x=3.0, y=4.0)}
+        ),
+        priority_weight=0.0,
+        recency_weight=0.0,
+        proximity_weight=1.0,
+        direction_bonus=0.0,
+    )
+    await queue.submit_task("A", "QA")
+
+    scored = await queue.get_scored_candidates(robot_position=(0.0, 0.0))
+
+    assert scored[0].components["distance_to_station"] == 5.0
+    assert scored[0].components["proximity_component"] == 0.2
 
 
 @pytest.mark.asyncio
@@ -330,3 +471,16 @@ def test_global_get_task_queue_returns_queue() -> None:
     from tasks.queue import TaskQueue, get_task_queue
 
     assert isinstance(get_task_queue(), TaskQueue)
+
+
+def test_global_get_task_queue_uses_route_store_station_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_station_provider = object()
+
+    import shared.navigation.route_store as route_store_module
+
+    monkeypatch.setattr(route_store_module, "get_route_store", lambda: fake_station_provider)
+    sys.modules.pop("apps.logistics.tasks.queue", None)
+    sys.modules.pop("tasks.queue", None)
+    queue_module = importlib.import_module("apps.logistics.tasks.queue")
+
+    assert queue_module.get_task_queue()._station_provider is fake_station_provider

@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 
 
 def test_operator_html_exists_with_required_markers() -> None:
-    operator_html = ROOT / "ui" / "operator.html"
+    operator_html = ROOT / "apps" / "logistics" / "ui" / "operator.html"
 
     assert operator_html.exists()
 
@@ -30,6 +30,11 @@ def test_operator_html_exists_with_required_markers() -> None:
 def test_rest_app_serves_operator_html() -> None:
     import api.rest as rest_module
 
+    async def noop() -> None:
+        return None
+
+    rest_module.startup_system = noop
+    rest_module.shutdown_system = noop
     client = TestClient(rest_module.create_app())
 
     response = client.get("/ui/operator.html")

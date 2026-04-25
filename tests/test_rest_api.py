@@ -4,6 +4,7 @@ import sys
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -148,6 +149,17 @@ class FakeStateMonitor:
         return self.poll_state
 
 
+class FakeDispatcher:
+    def __init__(self, *, active_task_id: str | None = None, error: Exception | None = None):
+        self.active_task_id = active_task_id
+        self.error = error
+
+    async def get_state(self):
+        if self.error is not None:
+            raise self.error
+        return SimpleNamespace(active_task_id=self.active_task_id)
+
+
 class FakeSDKAdapter:
     def __init__(self, *, passive_result: bool = True, stand_up_result: bool = True):
         self.passive_result = passive_result
@@ -225,17 +237,25 @@ def rest_client(monkeypatch: pytest.MonkeyPatch):
     state_monitor = FakeStateMonitor()
     sdk = FakeSDKAdapter()
     route_store = FakeRouteStore()
+    dispatcher = FakeDispatcher()
     event_bus = FakeEventBus()
 
     monkeypatch.setattr(auth_module, "get_config", lambda: config)
     monkeypatch.setattr(rest_module, "get_task_queue_dep", lambda: queue)
     monkeypatch.setattr(rest_module, "get_state_monitor_dep", lambda: state_monitor)
+    monkeypatch.setattr(rest_module, "get_dispatcher_dep", lambda: dispatcher)
     monkeypatch.setattr(rest_module, "get_sdk_adapter_dep", lambda: sdk)
     monkeypatch.setattr(rest_module, "get_route_store_dep", lambda: route_store)
     monkeypatch.setattr(rest_module, "get_event_bus", lambda: event_bus)
+    monkeypatch.setattr(rest_module, "startup_system", _noop_async)
+    monkeypatch.setattr(rest_module, "shutdown_system", _noop_async)
 
     app = rest_module.create_app()
-    return TestClient(app), queue, state_monitor, sdk, route_store, event_bus, rest_module
+    return TestClient(app), queue, state_monitor, sdk, route_store, dispatcher, event_bus, rest_module
+
+
+async def _noop_async() -> None:
+    return None
 
 
 def test_health_endpoint(rest_client) -> None:
@@ -454,6 +474,17 @@ def test_quadruped_status_with_current_state(rest_client) -> None:
     assert body["mode"] == "standing"
 
 
+def test_quadruped_status_includes_active_task_id(rest_client) -> None:
+    client, _, state_monitor, *_, dispatcher, _event_bus, _rest_module = rest_client
+    state_monitor.current_state = make_state()
+    dispatcher.active_task_id = "task-42"
+
+    response = client.get("/quadruped/status", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 200
+    assert response.json()["active_task_id"] == "task-42"
+
+
 def test_quadruped_status_fallback_poll_once(rest_client) -> None:
     client, _, state_monitor, *_ = rest_client
     state_monitor.current_state = None
@@ -476,6 +507,19 @@ def test_quadruped_status_when_no_state_available(rest_client) -> None:
     assert response.status_code == 200
     assert response.json()["battery_pct"] is None
     assert response.json()["mode"] is None
+
+
+def test_quadruped_status_dispatcher_failure_still_returns_response(rest_client) -> None:
+    client, _, state_monitor, *_, dispatcher, _event_bus, _rest_module = rest_client
+    state_monitor.current_state = make_state()
+    dispatcher.error = RuntimeError("dispatcher status unavailable")
+
+    response = client.get("/quadruped/status", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["battery_pct"] == 88
+    assert body["active_task_id"] is None
 
 
 def test_estop_success(rest_client) -> None:

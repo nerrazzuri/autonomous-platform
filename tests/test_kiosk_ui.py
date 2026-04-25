@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 
 
 def test_kiosk_html_exists_with_required_markers() -> None:
-    kiosk_html = ROOT / "ui" / "kiosk.html"
+    kiosk_html = ROOT / "apps" / "logistics" / "ui" / "kiosk.html"
 
     assert kiosk_html.exists()
 
@@ -33,6 +33,11 @@ def test_kiosk_html_exists_with_required_markers() -> None:
 def test_rest_app_serves_kiosk_html() -> None:
     import api.rest as rest_module
 
+    async def noop() -> None:
+        return None
+
+    rest_module.startup_system = noop
+    rest_module.shutdown_system = noop
     client = TestClient(rest_module.create_app())
 
     response = client.get("/ui/kiosk.html")

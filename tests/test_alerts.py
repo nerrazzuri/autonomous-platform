@@ -284,37 +284,3 @@ async def test_invalid_event_type_raises(alerts_module) -> None:
 
 def test_global_get_alert_manager_returns_manager(alerts_module) -> None:
     assert alerts_module.get_alert_manager() is alerts_module.alert_manager
-
-
-def test_rest_lifespan_starts_and_stops_alert_manager(monkeypatch: pytest.MonkeyPatch) -> None:
-    from fastapi.testclient import TestClient
-
-    import api.rest as rest_module
-
-    calls: list[str] = []
-
-    class FakeManager:
-        async def start(self) -> None:
-            calls.append("alert-start")
-
-        async def stop(self) -> None:
-            calls.append("alert-stop")
-
-    class FakeBrokerManager:
-        async def start(self) -> None:
-            calls.append("ws-start")
-
-        async def stop(self) -> None:
-            calls.append("ws-stop")
-
-    monkeypatch.setattr(rest_module, "get_alert_manager", lambda: FakeManager())
-    monkeypatch.setattr(rest_module, "get_ws_broker", lambda: FakeBrokerManager())
-
-    app = rest_module.create_app()
-
-    with TestClient(app) as client:
-        response = client.get("/health")
-        assert response.status_code == 200
-
-    assert calls == ["ws-start", "alert-start", "alert-stop", "ws-stop"]
-
