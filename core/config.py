@@ -22,6 +22,7 @@ class AppSection(BaseModel):
 class QuadrupedSection(BaseModel):
     quadruped_ip: str = "192.168.234.1"
     sdk_port: int = Field(default=43988, ge=1, le=65535)
+    sdk_lib_path: str | None = None
     connection_timeout_seconds: float = 5.0
     auto_stand_on_startup: bool = False
 

@@ -128,6 +128,7 @@ async def test_startup_system_starts_components(main_module, monkeypatch: pytest
         "database.initialize",
         "route_store.load",
         "start:event_bus",
+        "sdk.connect",
         "start:heartbeat",
         "start:state_monitor",
         "start:obstacle",
@@ -163,7 +164,8 @@ async def test_startup_system_auto_stands_when_enabled(main_module, monkeypatch:
 
     await main_module.startup_system()
 
-    assert calls[-2:] == ["sdk.connect", "sdk.stand_up"]
+    assert calls.index("sdk.connect") < calls.index("start:heartbeat")
+    assert calls[-1] == "sdk.stand_up"
 
 
 @pytest.mark.asyncio
@@ -235,4 +237,3 @@ def test_main_importable_without_running_server(monkeypatch: pytest.MonkeyPatch)
     assert callable(module.main)
     assert callable(module.startup_system)
     assert callable(module.shutdown_system)
-

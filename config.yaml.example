@@ -6,6 +6,7 @@ app:
 quadruped:
   quadruped_ip: "192.168.234.1"
   sdk_port: 43988
+  sdk_lib_path: null
   connection_timeout_seconds: 5.0
   auto_stand_on_startup: false
 
@@ -29,6 +30,7 @@ battery:
   charging_poll_seconds: 30
 
 heartbeat:
+  # 50Hz heartbeat. Do not increase above 0.05s for real SDK control.
   interval_seconds: 0.02
   sdk_timeout_seconds: 3.0
 

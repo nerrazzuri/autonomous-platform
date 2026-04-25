@@ -34,10 +34,14 @@ async def startup_system() -> None:
     dispatcher = get_dispatcher()
     battery_manager = get_battery_manager()
     watchdog = get_watchdog()
+    sdk_adapter = get_sdk_adapter()
 
     await database.initialize()
     await route_store.load()
     await event_bus.start()
+    connected = await sdk_adapter.connect()
+    if not connected:
+        logger.warning("Quadruped startup SDK connect failed")
     await heartbeat_controller.start()
     await state_monitor.start()
     await obstacle_detector.start()
@@ -46,8 +50,6 @@ async def startup_system() -> None:
     await watchdog.start()
 
     if config.quadruped.auto_stand_on_startup:
-        sdk_adapter = get_sdk_adapter()
-        connected = await sdk_adapter.connect()
         if not connected:
             logger.warning("Quadruped auto-stand startup connect failed")
         else:
@@ -99,4 +101,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import math
+import logging
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -68,6 +70,32 @@ class FakeSDK:
 
     def checkConnect(self):
         self.calls.append(("checkConnect",))
+        return self.connected
+
+
+class AliasSDK:
+    def __init__(self):
+        self.calls = []
+        self.connected = True
+
+    def initRobot(self, local_ip, port, quadruped_ip):
+        self.calls.append(("initRobot", local_ip, port, quadruped_ip))
+        return True
+
+    def passive(self):
+        self.calls.append(("passive",))
+        return True
+
+    def getBatteryPower(self):
+        self.calls.append(("getBatteryPower",))
+        return 64
+
+    def getCurrentMode(self):
+        self.calls.append(("getCurrentMode",))
+        return 3
+
+    def checkConnection(self):
+        self.calls.append(("checkConnection",))
         return self.connected
 
 
@@ -265,6 +293,42 @@ async def test_check_connection_false_sets_error_mode() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sdk_method_aliases_are_supported() -> None:
+    from quadruped.sdk_adapter import SDKAdapter
+
+    fake_sdk = AliasSDK()
+    adapter = SDKAdapter(sdk_client=fake_sdk)
+    await adapter.connect()
+
+    battery = await adapter.get_battery()
+    control_mode = await adapter.get_control_mode()
+    connection_ok = await adapter.check_connection()
+
+    assert battery == 64
+    assert control_mode == 3
+    assert connection_ok is True
+    assert ("getBatteryPower",) in fake_sdk.calls
+    assert ("getCurrentMode",) in fake_sdk.calls
+    assert ("checkConnection",) in fake_sdk.calls
+
+
+@pytest.mark.asyncio
+async def test_connect_warns_when_local_ip_is_unspecified(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from quadruped.sdk_adapter import SDKAdapter
+
+    adapter = SDKAdapter(sdk_client=FakeSDK(), local_ip="0.0.0.0")
+
+    with caplog.at_level(logging.WARNING):
+        connected = await adapter.connect()
+
+    assert connected is True
+    assert "0.0.0.0" in caplog.text
+    assert "actual workstation IP" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_get_telemetry_snapshot_returns_dataclass() -> None:
     from quadruped.sdk_adapter import QuadrupedMode, QuadrupedTelemetrySnapshot, SDKAdapter
 
@@ -306,6 +370,39 @@ def test_allow_mock_false_raises_when_sdk_missing(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(sdk_module.SDKUnavailableError):
         sdk_module.SDKAdapter(sdk_client=None, allow_mock=False)
+
+
+def test_sdk_lib_path_inserts_arch_specific_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import quadruped.sdk_adapter as sdk_module
+
+    arch_dir = tmp_path / "x86_64"
+    arch_dir.mkdir()
+    monkeypatch.setattr(
+        sdk_module,
+        "get_config",
+        lambda: SimpleNamespace(
+            quadruped=SimpleNamespace(
+                quadruped_ip="192.168.234.1",
+                sdk_port=43988,
+                sdk_lib_path=str(tmp_path),
+            ),
+            workstation=SimpleNamespace(local_ip="192.168.0.10"),
+            navigation=SimpleNamespace(max_forward_velocity=0.35, max_yaw_rate=0.6),
+        ),
+    )
+    monkeypatch.setattr(sdk_module.platform, "machine", lambda: "amd64")
+    monkeypatch.setattr(sys, "path", [entry for entry in sys.path if entry != str(arch_dir)])
+
+    class FakeVendorModule:
+        class HighLevel:
+            pass
+
+    monkeypatch.setattr(sdk_module.importlib, "import_module", lambda name: FakeVendorModule)
+
+    adapter = sdk_module.SDKAdapter(sdk_client=None, allow_mock=False)
+
+    assert sys.path[0] == str(arch_dir)
+    assert isinstance(adapter._sdk_client, FakeVendorModule.HighLevel)
 
 
 def test_global_get_sdk_adapter_returns_adapter() -> None:

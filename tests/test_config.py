@@ -56,6 +56,22 @@ def test_load_partial_yaml_override(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert config.logging.level == "DEBUG"
 
 
+def test_load_quadruped_sdk_lib_path_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch, preserve_env=True)
+    config_path = tmp_path / "config.yaml"
+    write_yaml(
+        config_path,
+        """
+        quadruped:
+          sdk_lib_path: "/opt/agibot/sdk"
+        """,
+    )
+
+    config = module.load_config(config_path)
+
+    assert config.quadruped.sdk_lib_path == "/opt/agibot/sdk"
+
+
 def test_invalid_port_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     module = load_config_module(monkeypatch, preserve_env=True)
     config_path = tmp_path / "config.yaml"

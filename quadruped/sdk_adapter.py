@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 import importlib
 import math
+import platform
+import sys
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from core.config import get_config
@@ -96,6 +99,7 @@ class SDKAdapter:
         quadruped_ip: str | None = None,
         local_ip: str | None = None,
         sdk_port: int | None = None,
+        sdk_lib_path: str | None = None,
         sdk_client: Any | None = None,
         allow_mock: bool = True,
     ):
@@ -103,6 +107,7 @@ class SDKAdapter:
         self._quadruped_ip = quadruped_ip or config.quadruped.quadruped_ip
         self._local_ip = local_ip or config.workstation.local_ip
         self._sdk_port = sdk_port or config.quadruped.sdk_port
+        self._sdk_lib_path = sdk_lib_path if sdk_lib_path is not None else config.quadruped.sdk_lib_path
         self._max_forward_velocity = config.navigation.max_forward_velocity
         self._max_yaw_rate = config.navigation.max_yaw_rate
         self._allow_mock = allow_mock
@@ -114,6 +119,12 @@ class SDKAdapter:
     async def connect(self) -> bool:
         if self._mode not in {QuadrupedMode.DISCONNECTED, QuadrupedMode.ERROR}:
             return True
+
+        if self._local_ip == "0.0.0.0":
+            logger.warning(
+                "local_ip is 0.0.0.0; SDK initRobot requires the actual workstation IP",
+                extra={"local_ip": self._local_ip},
+            )
 
         result = await self._call_sdk(
             "initRobot",
@@ -218,21 +229,21 @@ class SDKAdapter:
         return self._coerce_vector(rpy)
 
     async def get_battery(self) -> int:
-        battery = await self._call_sdk("getBattery", default=0)
+        battery = await self._call_sdk_aliases(("getBatteryPower", "getBattery"), default=0)
         try:
             return int(battery)
         except (TypeError, ValueError):
             return 0
 
     async def get_control_mode(self) -> int:
-        control_mode = await self._call_sdk("getControlMode", default=-1)
+        control_mode = await self._call_sdk_aliases(("getCurrentMode", "getControlMode"), default=-1)
         try:
             return int(control_mode)
         except (TypeError, ValueError):
             return -1
 
     async def check_connection(self) -> bool:
-        connection_ok = bool(await self._call_sdk("checkConnect", default=False))
+        connection_ok = bool(await self._call_sdk_aliases(("checkConnection", "checkConnect"), default=False))
         if not connection_ok:
             if self._mode != QuadrupedMode.DISCONNECTED:
                 self._set_error("Quadruped SDK connection lost")
@@ -276,8 +287,26 @@ class SDKAdapter:
             logger.exception("SDK call failed", extra={"method_name": method_name})
             return default
 
+    async def _call_sdk_aliases(self, method_names: tuple[str, ...], *args, default: Any = None) -> Any:
+        last_missing_name = method_names[-1]
+        for method_name in method_names:
+            method = getattr(self._sdk_client, method_name, None)
+            if method is None:
+                continue
+            try:
+                return await asyncio.to_thread(method, *args)
+            except Exception as exc:
+                self._set_error(f"{method_name} failed: {exc}")
+                logger.exception("SDK call failed", extra={"method_name": method_name})
+                return default
+
+        self._set_error(f"SDK client missing method: {last_missing_name}")
+        logger.error("SDK method missing", extra={"method_name": last_missing_name, "aliases": method_names})
+        return default
+
     def _create_sdk_client(self) -> Any:
         try:
+            self._prepare_sdk_import_path()
             sdk_module = importlib.import_module("mc_sdk_zsl_1_py")
             return sdk_module.HighLevel()
         except Exception as exc:
@@ -285,6 +314,26 @@ class SDKAdapter:
                 logger.info("Vendor SDK unavailable, using null quadruped client")
                 return _NullSDKClient()
             raise SDKUnavailableError(f"Vendor SDK unavailable: {exc}") from exc
+
+    def _prepare_sdk_import_path(self) -> None:
+        if not self._sdk_lib_path:
+            return
+
+        arch = self._detect_sdk_architecture()
+        sdk_arch_path = str(Path(self._sdk_lib_path) / arch)
+        if sys.path and sys.path[0] == sdk_arch_path:
+            return
+        if sdk_arch_path in sys.path:
+            sys.path.remove(sdk_arch_path)
+        sys.path.insert(0, sdk_arch_path)
+
+    def _detect_sdk_architecture(self) -> str:
+        machine = platform.machine().lower()
+        if machine in {"amd64", "x86_64"}:
+            return "x86_64"
+        if machine in {"arm64", "aarch64"}:
+            return "aarch64"
+        return machine
 
     async def _publish_connection_event(self, event_name: EventName) -> None:
         try:
