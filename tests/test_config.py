@@ -17,6 +17,8 @@ def load_config_module(monkeypatch: pytest.MonkeyPatch, *, preserve_env: bool = 
     monkeypatch.chdir(ROOT)
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
+    sys.modules.pop("shared.core.config", None)
+    sys.modules.pop("shared.core", None)
     sys.modules.pop("core.config", None)
     sys.modules.pop("core", None)
     return importlib.import_module("core.config")

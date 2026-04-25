@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Station Kiosk</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: oklch(0.18 0.012 225);
+      --bg-top: oklch(0.24 0.02 220);
+      --panel: oklch(0.26 0.012 226 / 0.95);
+      --panel-strong: oklch(0.31 0.014 224 / 0.98);
+      --line: oklch(0.42 0.018 220 / 0.7);
+      --text: oklch(0.95 0.007 240);
+      --muted: oklch(0.77 0.01 235);
+      --accent: oklch(0.78 0.14 82);
+      --accent-strong: oklch(0.68 0.14 82);
+      --info: oklch(0.76 0.08 225);
+      --success: oklch(0.8 0.14 150);
+      --warning: oklch(0.82 0.14 88);
+      --danger: oklch(0.68 0.18 28);
+      --shadow: 0 26px 54px rgba(4, 8, 18, 0.32);
+      --radius: 28px;
+      --radius-sm: 18px;
+      --transition: 180ms cubic-bezier(0.22, 1, 0.36, 1);
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(245, 184, 58, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(64, 115, 176, 0.18), transparent 24%),
+        linear-gradient(180deg, var(--bg-top), var(--bg));
+      padding: 18px;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.28;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.025)) 0 0 / 100% 1px,
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.02)) 0 0 / 1px 100%;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 90%);
+    }
+
+    .shell {
+      width: min(1440px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .hero {
+      padding: 24px 28px;
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      background:
+        linear-gradient(135deg, rgba(246, 184, 61, 0.14), transparent 45%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        var(--panel-strong);
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 8px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2.4rem, 5vw, 4.2rem);
+      line-height: 0.96;
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      max-width: 58ch;
+      font-size: 1.05rem;
+    }
+
+    .hero-meta {
+      display: grid;
+      gap: 10px;
+      justify-items: end;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 58px;
+      padding: 0 20px;
+      border-radius: 999px;
+      background: rgba(11, 17, 28, 0.46);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+    }
+
+    .pill strong {
+      color: var(--accent);
+      font-size: 1.12rem;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: var(--muted);
+      box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.05);
+      transition: background-color var(--transition), transform var(--transition);
+    }
+
+    .pill[data-tone="success"] .status-dot {
+      background: var(--success);
+      transform: scale(1.08);
+    }
+
+    .pill[data-tone="warning"] .status-dot {
+      background: var(--warning);
+    }
+
+    .pill[data-tone="danger"] .status-dot {
+      background: var(--danger);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .left-column,
+    .right-column {
+      display: grid;
+      gap: 18px;
+    }
+
+    .actions-card,
+    .status-card,
+    .message-card,
+    .utility-card {
+      padding: 22px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .card-kicker {
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .card-title {
+      margin: 4px 0 0;
+      font-size: 1.15rem;
+      letter-spacing: 0.02em;
+    }
+
+    .button-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      width: 100%;
+      min-height: 108px;
+      padding: 20px 24px;
+      border-radius: 24px;
+      color: var(--text);
+      font: inherit;
+      font-size: 1.28rem;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      text-align: left;
+      cursor: pointer;
+      transition:
+        transform var(--transition),
+        box-shadow var(--transition),
+        background-color var(--transition),
+        opacity var(--transition);
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    button:focus-visible {
+      outline: 3px solid rgba(255, 208, 118, 0.75);
+      outline-offset: 3px;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.56;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .button-primary {
+      min-height: 152px;
+      background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+      color: oklch(0.19 0.012 75);
+      box-shadow: 0 22px 42px rgba(243, 186, 70, 0.24);
+    }
+
+    .button-secondary {
+      background: rgba(76, 119, 170, 0.22);
+      border: 1px solid rgba(108, 151, 208, 0.28);
+    }
+
+    .button-danger {
+      background: rgba(178, 69, 45, 0.24);
+      border: 1px solid rgba(226, 117, 93, 0.28);
+    }
+
+    .button-utility {
+      min-height: 84px;
+      font-size: 1.04rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .button-help {
+      display: block;
+      margin-top: 7px;
+      font-size: 0.98rem;
+      font-weight: 500;
+      color: rgba(234, 239, 247, 0.84);
+    }
+
+    .utility-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metrics,
+    .task-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .metrics {
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .metric,
+    .task-field {
+      padding: 15px 16px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .metric-label,
+    .task-label {
+      color: var(--muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .metric-value,
+    .task-value {
+      margin-top: 8px;
+      font-size: 1.24rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      word-break: break-word;
+    }
+
+    .task-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .task-field.notes {
+      grid-column: 1 / -1;
+    }
+
+    .message-list {
+      display: grid;
+      gap: 10px;
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .message-item {
+      padding: 15px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      display: grid;
+      gap: 6px;
+    }
+
+    .message-item[data-tone="success"] {
+      background: rgba(44, 131, 92, 0.2);
+      border-color: rgba(90, 198, 144, 0.28);
+    }
+
+    .message-item[data-tone="warning"] {
+      background: rgba(174, 118, 26, 0.2);
+      border-color: rgba(245, 182, 72, 0.26);
+    }
+
+    .message-item[data-tone="danger"] {
+      background: rgba(160, 58, 38, 0.24);
+      border-color: rgba(234, 109, 86, 0.3);
+    }
+
+    .message-item[data-tone="info"] {
+      background: rgba(59, 102, 152, 0.18);
+      border-color: rgba(95, 149, 212, 0.24);
+    }
+
+    .message-time {
+      color: var(--muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .message-text {
+      font-size: 1rem;
+      line-height: 1.45;
+    }
+
+    .empty-note {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px dashed rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+    }
+
+    @media (max-width: 1060px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 820px) {
+      body {
+        padding: 12px;
+      }
+
+      .hero {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .hero-meta {
+        justify-items: stretch;
+      }
+
+      .utility-grid,
+      .task-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="panel hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Sumitomo Factory Logistics</p>
+        <h1>Station <span id="station-title">--</span> Kiosk</h1>
+        <p class="subtitle">Always-on touchscreen request panel for production line handoff, arrival confirmation, and live quadruped updates.</p>
+      </div>
+      <div class="hero-meta">
+        <div class="pill"><span>Station</span> <strong id="station-badge">--</strong></div>
+        <div class="pill" id="connection-pill" data-tone="warning">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="connection-text">Awaiting credentials</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <div class="left-column">
+        <article class="panel actions-card">
+          <div>
+            <div class="card-kicker">Touch Controls</div>
+            <h2 class="card-title">Station Actions</h2>
+          </div>
+          <div class="button-grid">
+            <button type="button" class="button-primary" id="request-button">
+              Request Quadruped
+              <span class="button-help">Create a station request to QA</span>
+            </button>
+            <button type="button" class="button-secondary" id="confirm-load-button">
+              Confirm Load
+              <span class="button-help">Use when cargo is loaded onto the quadruped</span>
+            </button>
+            <button type="button" class="button-danger" id="confirm-unload-button">
+              Confirm Unload
+              <span class="button-help">Use when cargo is unloaded at destination</span>
+            </button>
+          </div>
+        </article>
+
+        <article class="panel utility-card">
+          <div>
+            <div class="card-kicker">Kiosk Hardening</div>
+            <h2 class="card-title">Connection And Refresh</h2>
+          </div>
+          <div class="utility-grid">
+            <button type="button" class="button-utility" id="reconnect-button">
+              Reconnect
+              <span class="button-help">Force a new /ws connection now</span>
+            </button>
+            <button type="button" class="button-utility" id="refresh-button">
+              Refresh Status
+              <span class="button-help">Reload /quadruped/status, /queue/status, and /tasks</span>
+            </button>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Last Updated</div>
+            <div class="metric-value" id="last-updated">--</div>
+          </div>
+        </article>
+
+        <article class="panel message-card">
+          <div>
+            <div class="card-kicker">Alerts And Status</div>
+            <h2 class="card-title">Kiosk Messages</h2>
+          </div>
+          <div class="message-list" id="message-list"></div>
+        </article>
+      </div>
+
+      <div class="right-column">
+        <article class="panel status-card">
+          <div>
+            <div class="card-kicker">Quadruped</div>
+            <h2 class="card-title">Live Robot Status</h2>
+          </div>
+          <div class="metrics" id="quadruped-metrics"></div>
+        </article>
+
+        <article class="panel status-card">
+          <div>
+            <div class="card-kicker">Queue</div>
+            <h2 class="card-title">Queue Snapshot</h2>
+          </div>
+          <div class="metrics" id="queue-metrics"></div>
+        </article>
+
+        <article class="panel status-card">
+          <div>
+            <div class="card-kicker">Current Task</div>
+            <h2 class="card-title">Station Task Status</h2>
+          </div>
+          <div class="task-grid" id="task-fields"></div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const state = {
+        stationId: "",
+        token: "",
+        hasCredentials: false,
+        ws: null,
+        socketGeneration: 0,
+        reconnectTimer: null,
+        reconnectDelayMs: 3000,
+        requestPending: false,
+        confirmLoadPending: false,
+        confirmUnloadPending: false,
+        refreshPending: false,
+        requestCooldownTimer: null,
+        requestCooldownUntil: 0,
+        currentTask: null,
+        quadruped: {
+          mode: null,
+          battery_pct: null,
+          position: null,
+          connection_ok: null,
+          timestamp: null,
+          active_task_id: null
+        },
+        queue: {
+          total: 0,
+          queued: 0,
+          dispatched: 0,
+          awaiting_load: 0,
+          in_transit: 0,
+          awaiting_unload: 0,
+          completed: 0,
+          failed: 0,
+          cancelled: 0
+        },
+        messages: []
+      };
+
+      const elements = {
+        stationTitle: document.getElementById("station-title"),
+        stationBadge: document.getElementById("station-badge"),
+        connectionPill: document.getElementById("connection-pill"),
+        connectionText: document.getElementById("connection-text"),
+        requestButton: document.getElementById("request-button"),
+        confirmLoadButton: document.getElementById("confirm-load-button"),
+        confirmUnloadButton: document.getElementById("confirm-unload-button"),
+        reconnectButton: document.getElementById("reconnect-button"),
+        refreshButton: document.getElementById("refresh-button"),
+        lastUpdated: document.getElementById("last-updated"),
+        quadrupedMetrics: document.getElementById("quadruped-metrics"),
+        queueMetrics: document.getElementById("queue-metrics"),
+        taskFields: document.getElementById("task-fields"),
+        messageList: document.getElementById("message-list")
+      };
+
+      const quadrupedMetrics = [
+        ["Mode", "mode"],
+        ["Battery", "battery_pct"],
+        ["Connection", "connection_ok"],
+        ["Position", "position"],
+        ["Active Task", "active_task_id"],
+        ["Telemetry", "timestamp"]
+      ];
+
+      const queueMetrics = [
+        ["Total", "total"],
+        ["Queued", "queued"],
+        ["Dispatched", "dispatched"],
+        ["Awaiting Load", "awaiting_load"],
+        ["In Transit", "in_transit"],
+        ["Awaiting Unload", "awaiting_unload"],
+        ["Completed", "completed"],
+        ["Failed", "failed"]
+      ];
+
+      init();
+
+      function init() {
+        bindEvents();
+        bootstrapFromQuery();
+        renderAll();
+
+        if (!state.hasCredentials) {
+          addMessage("Missing station_id or token in the page URL. Example: /ui/kiosk.html?station_id=A&token=test-operator-token", "danger");
+          setConnectionState("Credentials required", "danger");
+          disableAllControls();
+          return;
+        }
+
+        addMessage("Kiosk initialized for station " + state.stationId + ".", "info");
+        refreshAllStatus();
+        connectWebSocket();
+      }
+
+      function bindEvents() {
+        elements.requestButton.addEventListener("click", requestQuadruped);
+        elements.confirmLoadButton.addEventListener("click", function () {
+          confirmTaskStep("load");
+        });
+        elements.confirmUnloadButton.addEventListener("click", function () {
+          confirmTaskStep("unload");
+        });
+        elements.reconnectButton.addEventListener("click", function () {
+          addMessage("Reconnect requested from kiosk.", "info");
+          forceReconnect();
+        });
+        elements.refreshButton.addEventListener("click", refreshAllStatus);
+        window.addEventListener("beforeunload", teardownSocket);
+      }
+
+      function bootstrapFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        state.stationId = (params.get("station_id") || "").trim();
+        state.token = (params.get("token") || "").trim();
+        state.hasCredentials = Boolean(state.stationId && state.token);
+        elements.stationTitle.textContent = state.stationId || "--";
+        elements.stationBadge.textContent = state.stationId || "--";
+      }
+
+      async function refreshAllStatus() {
+        if (!state.hasCredentials || state.refreshPending) {
+          return;
+        }
+
+        state.refreshPending = true;
+        updateControls();
+
+        const results = await Promise.allSettled([
+          refreshQuadrupedStatus(),
+          refreshQueueStatus(),
+          refreshQueuedTasks()
+        ]);
+
+        const failures = results.filter(function (result) {
+          return result.status === "rejected";
+        }).length;
+
+        touchLastUpdated();
+        if (failures === 0) {
+          addMessage("Status refreshed successfully.", "success");
+        } else {
+          addMessage("Status refresh finished with " + failures + " issue" + (failures === 1 ? "" : "s") + ".", "warning");
+        }
+
+        state.refreshPending = false;
+        updateControls();
+      }
+
+      async function refreshQuadrupedStatus() {
+        const response = await authorizedFetch("/quadruped/status");
+        const payload = await response.json();
+        state.quadruped = Object.assign({}, state.quadruped, payload);
+        renderQuadruped();
+      }
+
+      async function refreshQueueStatus() {
+        const response = await authorizedFetch("/queue/status");
+        state.queue = await response.json();
+        renderQueue();
+      }
+
+      async function refreshQueuedTasks() {
+        const response = await authorizedFetch("/tasks?status=queued");
+        const tasks = await response.json();
+        const stationTask = tasks.find(function (task) {
+          return task.station_id === state.stationId;
+        });
+
+        if (stationTask) {
+          setCurrentTask(stationTask);
+        } else if (!state.currentTask || state.currentTask.status === "queued") {
+          setCurrentTask(null);
+        } else {
+          renderTask();
+        }
+      }
+
+      async function requestQuadruped() {
+        if (!state.hasCredentials || state.requestPending || Date.now() < state.requestCooldownUntil) {
+          return;
+        }
+
+        state.requestPending = true;
+        startRequestCooldown(2500);
+        updateControls();
+
+        try {
+          const response = await authorizedFetch("/tasks", {
+            method: "POST",
+            body: JSON.stringify({
+              station_id: state.stationId,
+              destination_id: "QA",
+              priority: 1,
+              notes: "Kiosk requested quadruped"
+            })
+          });
+
+          const task = await response.json();
+          setCurrentTask(task);
+          touchLastUpdated();
+          addMessage("Quadruped requested. Task " + task.id + " is now " + task.status + ".", "success");
+          await Promise.allSettled([refreshQueueStatus(), refreshQueuedTasks()]);
+        } catch (error) {
+          addMessage("Failed to request quadruped: " + error.message, "danger");
+        } finally {
+          state.requestPending = false;
+          updateControls();
+        }
+      }
+
+      async function confirmTaskStep(action) {
+        const currentTask = state.currentTask;
+        if (!currentTask || !currentTask.id) {
+          addMessage("No active task is available for confirm-" + action + ".", "warning");
+          return;
+        }
+
+        if (action === "load") {
+          if (state.confirmLoadPending) {
+            return;
+          }
+          state.confirmLoadPending = true;
+        } else {
+          if (state.confirmUnloadPending) {
+            return;
+          }
+          state.confirmUnloadPending = true;
+        }
+        updateControls();
+
+        try {
+          const response = await fetch(buildApiUrl("/tasks/" + encodeURIComponent(currentTask.id) + "/confirm-" + action), {
+            method: "POST",
+            headers: buildHeaders()
+          });
+
+          if ([404, 405, 501].includes(response.status)) {
+            const unavailableMessage = action === "load"
+              ? "Confirm-load endpoint is not available yet. Backend MOD needed."
+              : "Confirm-unload endpoint is not available yet. Backend MOD needed.";
+            addMessage(unavailableMessage, "warning");
+            return;
+          }
+
+          if (!response.ok) {
+            throw new Error(await extractErrorMessage(response, "Confirm-" + action + " failed."));
+          }
+
+          touchLastUpdated();
+          addMessage("Confirm-" + action + " request accepted for task " + currentTask.id + ".", "success");
+          await Promise.allSettled([refreshQueueStatus(), refreshQueuedTasks()]);
+        } catch (error) {
+          addMessage(error.message, "danger");
+        } finally {
+          if (action === "load") {
+            state.confirmLoadPending = false;
+          } else {
+            state.confirmUnloadPending = false;
+          }
+          updateControls();
+        }
+      }
+
+      function connectWebSocket() {
+        if (!state.hasCredentials) {
+          return;
+        }
+
+        if (state.reconnectTimer) {
+          window.clearTimeout(state.reconnectTimer);
+          state.reconnectTimer = null;
+        }
+
+        if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) {
+          return;
+        }
+
+        teardownSocket();
+        setConnectionState("Connecting", "warning");
+
+        state.socketGeneration += 1;
+        const generation = state.socketGeneration;
+        const socket = new WebSocket(buildWebSocketUrl());
+        state.ws = socket;
+
+        socket.addEventListener("open", function () {
+          if (generation !== state.socketGeneration) {
+            socket.close();
+            return;
+          }
+          setConnectionState("Connected", "success");
+          addMessage("Live updates connected.", "success");
+        });
+
+        socket.addEventListener("message", function (event) {
+          if (generation !== state.socketGeneration) {
+            return;
+          }
+          handleSocketMessage(event.data);
+        });
+
+        socket.addEventListener("error", function () {
+          if (generation !== state.socketGeneration) {
+            return;
+          }
+          setConnectionState("Connection error", "danger");
+        });
+
+        socket.addEventListener("close", function () {
+          if (generation !== state.socketGeneration) {
+            return;
+          }
+          state.ws = null;
+          setConnectionState("Disconnected", "warning");
+          scheduleReconnect();
+        });
+      }
+
+      function forceReconnect() {
+        teardownSocket();
+        connectWebSocket();
+      }
+
+      function scheduleReconnect() {
+        if (!state.hasCredentials || state.reconnectTimer) {
+          return;
+        }
+
+        addMessage("Live updates disconnected. Reconnecting in 3 seconds.", "warning");
+        state.reconnectTimer = window.setTimeout(function () {
+          state.reconnectTimer = null;
+          connectWebSocket();
+        }, state.reconnectDelayMs);
+      }
+
+      function teardownSocket() {
+        if (state.reconnectTimer) {
+          window.clearTimeout(state.reconnectTimer);
+          state.reconnectTimer = null;
+        }
+
+        if (!state.ws) {
+          return;
+        }
+
+        const socket = state.ws;
+        state.ws = null;
+        try {
+          if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+            socket.close();
+          }
+        } catch (error) {
+          console.warn("WebSocket close skipped", error);
+        }
+      }
+
+      function handleSocketMessage(rawMessage) {
+        let message;
+        try {
+          message = JSON.parse(rawMessage);
+        } catch (error) {
+          addMessage("Received unreadable WebSocket payload.", "warning");
+          return;
+        }
+
+        if (message.type !== "event") {
+          return;
+        }
+
+        const payload = message.payload || {};
+        const taskId = message.task_id || payload.task_id || null;
+
+        switch (message.event_name) {
+          case "task.submitted":
+          case "task.status_changed":
+          case "task.completed":
+          case "task.failed":
+          case "task.cancelled":
+            handleTaskEvent(message.event_name, payload, taskId);
+            break;
+          case "quadruped.telemetry":
+            state.quadruped = Object.assign({}, state.quadruped, payload);
+            renderQuadruped();
+            touchLastUpdated(message.timestamp);
+            if (payload.connection_ok === false) {
+              addMessage("Quadruped telemetry reports a connection issue.", "warning");
+            }
+            break;
+          case "quadruped.arrived_at_waypoint":
+            touchLastUpdated(message.timestamp);
+            addMessage(buildWaypointMessage(payload, taskId), "success");
+            break;
+          case "system.alert":
+            touchLastUpdated(message.timestamp);
+            addMessage(buildAlertMessage(payload), "danger");
+            break;
+          case "battery.warn":
+            touchLastUpdated(message.timestamp);
+            addMessage(buildBatteryMessage("Battery warning", payload), "warning");
+            break;
+          case "battery.critical":
+            touchLastUpdated(message.timestamp);
+            addMessage(buildBatteryMessage("Battery critical", payload), "danger");
+            break;
+          case "battery.recharged":
+            touchLastUpdated(message.timestamp);
+            addMessage(buildBatteryMessage("Battery recharged", payload), "success");
+            break;
+          default:
+            break;
+        }
+      }
+
+      function handleTaskEvent(eventName, payload, taskId) {
+        const stationMatches = payload.station_id === state.stationId;
+        const taskMatches = Boolean(state.currentTask && state.currentTask.id && state.currentTask.id === taskId);
+
+        if (!stationMatches && !taskMatches) {
+          return;
+        }
+
+        setCurrentTask(mergeTaskPayload(payload, taskId));
+        touchLastUpdated();
+        addMessage(buildTaskEventMessage(eventName, payload, taskId), eventTone(eventName));
+        Promise.allSettled([refreshQueueStatus(), refreshQueuedTasks()]);
+      }
+
+      function mergeTaskPayload(payload, taskId) {
+        const currentTask = state.currentTask || {};
+        return Object.assign({}, currentTask, {
+          id: payload.task_id || taskId || currentTask.id || "",
+          station_id: payload.station_id || currentTask.station_id || state.stationId,
+          destination_id: payload.destination_id || currentTask.destination_id || "QA",
+          priority: payload.priority != null ? payload.priority : (currentTask.priority != null ? currentTask.priority : 1),
+          status: payload.status || currentTask.status || "queued",
+          notes: payload.notes || currentTask.notes || "",
+          batch_id: payload.batch_id || currentTask.batch_id || null,
+          created_at: currentTask.created_at || "",
+          completed_at: currentTask.completed_at || null
+        });
+      }
+
+      function setCurrentTask(task) {
+        state.currentTask = task;
+        renderTask();
+        updateControls();
+      }
+
+      function renderAll() {
+        renderQuadruped();
+        renderQueue();
+        renderTask();
+        renderMessages();
+        updateControls();
+      }
+
+      function renderQuadruped() {
+        elements.quadrupedMetrics.innerHTML = quadrupedMetrics.map(function (entry) {
+          return metricTemplate(entry[0], formatQuadrupedValue(entry[1]));
+        }).join("");
+      }
+
+      function renderQueue() {
+        elements.queueMetrics.innerHTML = queueMetrics.map(function (entry) {
+          return metricTemplate(entry[0], String(state.queue[entry[1]] != null ? state.queue[entry[1]] : 0));
+        }).join("");
+      }
+
+      function renderTask() {
+        if (!state.currentTask) {
+          elements.taskFields.innerHTML = "<div class=\"empty-note\">No station task is active yet. Tap Request Quadruped when this station needs the robot.</div>";
+          return;
+        }
+
+        const task = state.currentTask;
+        const fields = [
+          ["Task ID", task.id || "--"],
+          ["Status", prettifyStatus(task.status || "--")],
+          ["Destination", task.destination_id || "--"],
+          ["Priority", String(task.priority != null ? task.priority : "--")],
+          ["Station", task.station_id || state.stationId || "--"],
+          ["Created", formatDateTime(task.created_at)],
+          ["Completed", formatDateTime(task.completed_at)],
+          ["Notes", task.notes || "No notes provided."]
+        ];
+
+        elements.taskFields.innerHTML = fields.map(function (field) {
+          const extraClass = field[0] === "Notes" ? " notes" : "";
+          return "<div class=\"task-field" + extraClass + "\"><div class=\"task-label\">" + escapeHtml(field[0]) + "</div><div class=\"task-value\">" + escapeHtml(field[1]) + "</div></div>";
+        }).join("");
+      }
+
+      function renderMessages() {
+        if (state.messages.length === 0) {
+          elements.messageList.innerHTML = "<div class=\"empty-note\">Status updates and alerts will appear here.</div>";
+          return;
+        }
+
+        elements.messageList.innerHTML = state.messages.map(function (message) {
+          return "<article class=\"message-item\" data-tone=\"" + message.tone + "\"><div class=\"message-time\">" + escapeHtml(message.time) + "</div><div class=\"message-text\">" + escapeHtml(message.text) + "</div></article>";
+        }).join("");
+      }
+
+      function updateControls() {
+        const hasTask = Boolean(state.currentTask && state.currentTask.id);
+        const status = hasTask ? (state.currentTask.status || "") : "";
+        const cooldownActive = Date.now() < state.requestCooldownUntil;
+
+        elements.requestButton.disabled = !state.hasCredentials || state.requestPending || cooldownActive;
+        elements.confirmLoadButton.disabled = !state.hasCredentials || !hasTask || state.confirmLoadPending || !allowLoad(status);
+        elements.confirmUnloadButton.disabled = !state.hasCredentials || !hasTask || state.confirmUnloadPending || !allowUnload(status);
+        elements.refreshButton.disabled = !state.hasCredentials || state.refreshPending;
+        elements.reconnectButton.disabled = !state.hasCredentials;
+
+        if (cooldownActive) {
+          const secondsRemaining = Math.max(1, Math.ceil((state.requestCooldownUntil - Date.now()) / 1000));
+          elements.requestButton.querySelector(".button-help").textContent = "Please wait " + secondsRemaining + "s before requesting again";
+        } else {
+          elements.requestButton.querySelector(".button-help").textContent = "Create a station request to QA";
+        }
+      }
+
+      function disableAllControls() {
+        elements.requestButton.disabled = true;
+        elements.confirmLoadButton.disabled = true;
+        elements.confirmUnloadButton.disabled = true;
+        elements.refreshButton.disabled = true;
+        elements.reconnectButton.disabled = true;
+      }
+
+      function allowLoad(status) {
+        return ["queued", "dispatched", "awaiting_load"].includes(status);
+      }
+
+      function allowUnload(status) {
+        return ["in_transit", "awaiting_unload"].includes(status);
+      }
+
+      function startRequestCooldown(durationMs) {
+        state.requestCooldownUntil = Date.now() + durationMs;
+        if (state.requestCooldownTimer) {
+          window.clearInterval(state.requestCooldownTimer);
+        }
+        state.requestCooldownTimer = window.setInterval(function () {
+          updateControls();
+          if (Date.now() >= state.requestCooldownUntil) {
+            window.clearInterval(state.requestCooldownTimer);
+            state.requestCooldownTimer = null;
+            updateControls();
+          }
+        }, 250);
+      }
+
+      function metricTemplate(label, value) {
+        return "<div class=\"metric\"><div class=\"metric-label\">" + escapeHtml(label) + "</div><div class=\"metric-value\">" + escapeHtml(value) + "</div></div>";
+      }
+
+      function formatQuadrupedValue(key) {
+        const value = state.quadruped[key];
+
+        if (key === "battery_pct") {
+          return value == null ? "--" : value + "%";
+        }
+
+        if (key === "connection_ok") {
+          if (value === true) {
+            return "Online";
+          }
+          if (value === false) {
+            return "Offline";
+          }
+          return "--";
+        }
+
+        if (key === "position") {
+          if (!Array.isArray(value) || value.length < 2) {
+            return "--";
+          }
+          return value.slice(0, 3).map(function (item) {
+            return Number(item).toFixed(2);
+          }).join(", ");
+        }
+
+        if (key === "timestamp") {
+          return formatDateTime(value);
+        }
+
+        if (key === "mode") {
+          return value ? prettifyStatus(String(value)) : "--";
+        }
+
+        return value == null || value === "" ? "--" : String(value);
+      }
+
+      function setConnectionState(text, tone) {
+        elements.connectionText.textContent = text;
+        elements.connectionPill.dataset.tone = tone;
+      }
+
+      function touchLastUpdated(value) {
+        elements.lastUpdated.textContent = formatDateTime(value || new Date().toISOString());
+      }
+
+      function addMessage(text, tone) {
+        state.messages.unshift({
+          text: text,
+          tone: tone,
+          time: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+          })
+        });
+        state.messages = state.messages.slice(0, 12);
+        renderMessages();
+      }
+
+      function eventTone(eventName) {
+        if (eventName === "task.completed") {
+          return "success";
+        }
+        if (["task.failed", "task.cancelled"].includes(eventName)) {
+          return "danger";
+        }
+        return "info";
+      }
+
+      function buildTaskEventMessage(eventName, payload, taskId) {
+        const taskLabel = payload.task_id || taskId || "unknown";
+        const statusLabel = payload.status ? " (" + prettifyStatus(payload.status) + ")" : "";
+
+        if (eventName === "task.submitted") {
+          return "Task " + taskLabel + " submitted for station " + (payload.station_id || state.stationId) + statusLabel + ".";
+        }
+        if (eventName === "task.completed") {
+          return "Task " + taskLabel + " completed.";
+        }
+        if (eventName === "task.failed") {
+          return "Task " + taskLabel + " failed" + optionalReason(payload) + ".";
+        }
+        if (eventName === "task.cancelled") {
+          return "Task " + taskLabel + " cancelled" + optionalReason(payload) + ".";
+        }
+        return "Task " + taskLabel + " updated" + statusLabel + ".";
+      }
+
+      function buildWaypointMessage(payload, taskId) {
+        const waypoint = payload.waypoint_name || payload.waypoint || payload.name || "the assigned waypoint";
+        const taskLabel = taskId ? " for task " + taskId : "";
+        return "Quadruped arrived at " + waypoint + taskLabel + ".";
+      }
+
+      function buildAlertMessage(payload) {
+        const severity = payload.severity ? String(payload.severity).toUpperCase() + ": " : "ALERT: ";
+        return severity + (payload.message || payload.reason || payload.detail || "Operator attention is required.");
+      }
+
+      function buildBatteryMessage(prefix, payload) {
+        const battery = payload.battery_pct == null ? "unknown" : payload.battery_pct + "%";
+        return prefix + ". Current battery: " + battery + ".";
+      }
+
+      function optionalReason(payload) {
+        const reason = payload.reason || payload.notes || payload.detail;
+        return reason ? " (reason: " + reason + ")" : "";
+      }
+
+      async function authorizedFetch(path, options) {
+        const response = await fetch(buildApiUrl(path), Object.assign({
+          method: "GET",
+          headers: buildHeaders()
+        }, options || {}));
+
+        if (!response.ok) {
+          throw new Error(await extractErrorMessage(response, "Request failed."));
+        }
+
+        return response;
+      }
+
+      function buildHeaders() {
+        return {
+          "Authorization": "Bearer " + state.token,
+          "Content-Type": "application/json"
+        };
+      }
+
+      async function extractErrorMessage(response, fallbackMessage) {
+        const contentType = response.headers.get("content-type") || "";
+
+        try {
+          if (contentType.includes("application/json")) {
+            const body = await response.json();
+            if (body && typeof body.detail === "string" && body.detail.trim()) {
+              return body.detail.trim();
+            }
+          } else {
+            const text = await response.text();
+            if (text.trim()) {
+              return text.trim();
+            }
+          }
+        } catch (error) {
+          console.warn("Error response parse skipped", error);
+        }
+
+        return fallbackMessage;
+      }
+
+      function buildApiUrl(path) {
+        return new URL(path, window.location.origin).toString();
+      }
+
+      function buildWebSocketUrl() {
+        const url = new URL("/ws", window.location.origin);
+        url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        url.searchParams.set("token", state.token);
+        url.searchParams.set("station_id", state.stationId);
+        return url.toString();
+      }
+
+      function formatDateTime(value) {
+        if (!value) {
+          return "--";
+        }
+
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          return String(value);
+        }
+
+        return parsed.toLocaleString([], {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        });
+      }
+
+      function prettifyStatus(value) {
+        return String(value)
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, function (character) {
+            return character.toUpperCase();
+          });
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+    })();
+  </script>
+</body>
+</html>
