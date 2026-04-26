@@ -1,0 +1,41 @@
+zones:
+  PLANTATION_NORTH:
+    description: "Palm oil northern sector, active daylight hours"
+    normal_objects:
+      - palm trees
+      - fallen fronds
+      - plantation machinery
+      - authorized vehicles
+    suspicious_objects:
+      - unfamiliar vehicles
+      - people outside working hours
+    threat_objects:
+      - fire
+      - smoke
+      - wild boar
+      - deer
+      - person in restricted area
+    time_rules:
+      - after: "18:00"
+        before: "06:00"
+        escalate_suspicious_to: "THREAT"
+
+  WAREHOUSE_PERIMETER:
+    description: "Warehouse perimeter and loading bay"
+    normal_objects:
+      - parked forklifts
+      - pallets
+      - security guards
+      - delivery trucks
+    suspicious_objects:
+      - unknown person near loading bay
+      - vehicle parked in restricted zone
+    threat_objects:
+      - fire
+      - smoke
+      - forced entry
+      - person climbing fence
+    time_rules:
+      - after: "20:00"
+        before: "06:00"
+        escalate_suspicious_to: "THREAT"

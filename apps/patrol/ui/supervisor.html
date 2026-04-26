@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Patrol Supervisor Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: oklch(0.15 0.012 235);
+      --bg-top: oklch(0.2 0.02 228);
+      --panel: oklch(0.22 0.013 232 / 0.97);
+      --panel-strong: oklch(0.26 0.016 228 / 0.98);
+      --panel-soft: oklch(0.19 0.014 235 / 0.92);
+      --line: oklch(0.39 0.02 228 / 0.72);
+      --text: oklch(0.95 0.01 235);
+      --muted: oklch(0.79 0.012 232);
+      --info: oklch(0.8 0.11 230);
+      --success: oklch(0.82 0.12 155);
+      --warning: oklch(0.84 0.14 88);
+      --critical: oklch(0.69 0.19 28);
+      --accent: oklch(0.75 0.1 215);
+      --accent-strong: oklch(0.65 0.11 216);
+      --radius: 24px;
+      --radius-sm: 16px;
+      --shadow: 0 24px 56px rgba(2, 7, 18, 0.34);
+      --transition: 180ms cubic-bezier(0.22, 1, 0.36, 1);
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(68, 124, 191, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(191, 113, 55, 0.12), transparent 24%),
+        linear-gradient(180deg, var(--bg-top), var(--bg));
+      color: var(--text);
+      padding: 20px;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.24;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.025)) 0 0 / 100% 1px,
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.02)) 0 0 / 1px 100%;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.42), transparent 86%);
+    }
+
+    .shell {
+      width: min(1500px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      padding: 24px;
+      background:
+        linear-gradient(140deg, rgba(90, 149, 222, 0.16), transparent 40%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        var(--panel-strong);
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 8px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 3vw, 3rem);
+      line-height: 1;
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 68ch;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .pill {
+      min-height: 54px;
+      padding: 0 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 999px;
+      background: rgba(10, 16, 24, 0.46);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      background: var(--muted);
+      box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.04);
+    }
+
+    .controls-panel {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 18px;
+      padding: 18px;
+    }
+
+    .message-box {
+      padding: 18px 20px;
+      border-radius: var(--radius-sm);
+      background: var(--panel-soft);
+      border: 1px solid rgba(129, 161, 198, 0.18);
+      display: grid;
+      gap: 6px;
+      align-content: start;
+    }
+
+    .message-box strong {
+      font-size: 1rem;
+    }
+
+    .message-box span {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(150px, 1fr));
+      gap: 12px;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      min-height: 72px;
+      padding: 14px 16px;
+      border-radius: 20px;
+      color: var(--text);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform var(--transition), opacity var(--transition), box-shadow var(--transition);
+    }
+
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    button:focus-visible { outline: 3px solid rgba(128, 191, 244, 0.72); outline-offset: 3px; }
+
+    .btn-primary {
+      background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+      color: oklch(0.16 0.01 230);
+      box-shadow: 0 16px 34px rgba(64, 114, 175, 0.26);
+    }
+
+    .btn-danger {
+      background: linear-gradient(180deg, var(--critical), oklch(0.61 0.18 26));
+      color: oklch(0.97 0.004 30);
+      box-shadow: 0 16px 34px rgba(164, 62, 42, 0.26);
+    }
+
+    .btn-muted {
+      background: rgba(97, 127, 166, 0.18);
+      border: 1px solid rgba(128, 166, 212, 0.28);
+    }
+
+    .btn-note {
+      display: block;
+      margin-top: 6px;
+      color: rgba(235, 241, 248, 0.8);
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      padding: 22px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .card h2,
+    .card h3 {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+    }
+
+    .metric {
+      display: grid;
+      gap: 6px;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      font-size: clamp(1.6rem, 2vw, 2.2rem);
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .metric-sub {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 1.2fr;
+      gap: 18px;
+    }
+
+    .field-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.055);
+    }
+
+    .field-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .field-value {
+      font-size: 1rem;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .feed-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    .feed-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .feed-copy {
+      display: grid;
+      gap: 6px;
+    }
+
+    .feed-title {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      font-weight: 700;
+    }
+
+    .feed-meta {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 78px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    .badge-info {
+      background: rgba(94, 176, 240, 0.14);
+      color: #8fdbff;
+    }
+
+    .badge-warning {
+      background: rgba(240, 189, 92, 0.16);
+      color: #ffd778;
+    }
+
+    .badge-critical {
+      background: rgba(237, 92, 72, 0.18);
+      color: #ff9a87;
+    }
+
+    .map-wrap {
+      padding: 0;
+    }
+
+    .map-head {
+      padding: 18px 22px 0;
+    }
+
+    .map-stage {
+      padding: 16px 18px 18px;
+    }
+
+    #floormap {
+      min-height: 390px;
+      border-radius: 20px;
+      overflow: hidden;
+      background: rgba(8, 12, 19, 0.28);
+      border: 1px solid rgba(121, 149, 185, 0.15);
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 8px 0;
+    }
+
+    @media (max-width: 1180px) {
+      .summary-grid,
+      .status-grid,
+      .controls-panel {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .hero {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .hero-actions,
+      .button-grid,
+      .summary-grid {
+        width: 100%;
+      }
+
+      .button-grid,
+      .summary-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 14px; }
+      .button-grid,
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="panel hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Perimeter Monitoring Console</p>
+        <h1>Patrol Supervisor Dashboard</h1>
+        <p class="subtitle">
+          Monitor patrol cycles, unresolved anomalies, quadruped health, and emergency controls from a single static control-room surface.
+        </p>
+      </div>
+      <div class="hero-actions">
+        <div class="pill" id="connection-pill"><span class="dot" id="connection-dot"></span><span id="connection-text">Disconnected</span></div>
+        <button class="btn-muted" id="refresh-button" type="button">Refresh<span class="btn-note">Reload patrol data</span></button>
+      </div>
+    </section>
+
+    <section class="panel controls-panel">
+      <div class="message-box">
+        <strong id="message-title">Awaiting patrol token</strong>
+        <span id="message-text">Open this page with <code>?token=&lt;supervisor-token&gt;</code> to enable patrol controls and live updates.</span>
+      </div>
+      <div class="button-grid">
+        <button class="btn-primary control-button" id="trigger-button" type="button">Trigger Now<span class="btn-note">Use the first patrol route</span></button>
+        <button class="btn-muted control-button" id="suspend-button" type="button">Suspend<span class="btn-note">Pause scheduler and dispatcher</span></button>
+        <button class="btn-primary control-button" id="resume-button" type="button">Resume<span class="btn-note">Resume manual patrol flow</span></button>
+        <button class="btn-danger control-button" id="estop-button" type="button">E-Stop<span class="btn-note">Force passive mode</span></button>
+        <button class="btn-muted control-button" id="estop-release-button" type="button">Release E-Stop<span class="btn-note">Request stand up</span></button>
+      </div>
+    </section>
+
+    <section class="summary-grid">
+      <article class="panel card">
+        <div class="metric">
+          <span class="metric-label">Patrol State</span>
+          <span class="metric-value" id="patrol-state">Idle</span>
+          <span class="metric-sub" id="patrol-state-detail">No active cycle</span>
+        </div>
+      </article>
+      <article class="panel card">
+        <div class="metric">
+          <span class="metric-label">Active Cycle</span>
+          <span class="metric-value" id="active-cycle">None</span>
+          <span class="metric-sub" id="active-route">Route: None</span>
+        </div>
+      </article>
+      <article class="panel card">
+        <div class="metric">
+          <span class="metric-label">Consecutive Failures</span>
+          <span class="metric-value" id="failure-count">0</span>
+          <span class="metric-sub" id="scheduler-state">Scheduler normal</span>
+        </div>
+      </article>
+      <article class="panel card">
+        <div class="metric">
+          <span class="metric-label">Battery / Robot</span>
+          <span class="metric-value" id="battery-value">Unknown</span>
+          <span class="metric-sub" id="robot-mode">No telemetry yet</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="status-grid">
+      <article class="panel card">
+        <h2>Current Cycle</h2>
+        <div class="field-list">
+          <div class="field">
+            <span class="field-label">Route</span>
+            <span class="field-value" id="cycle-route">Unknown</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Observation Progress</span>
+            <span class="field-value" id="cycle-progress">0 / 0</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Last Observation</span>
+            <span class="field-value" id="last-observation">No waypoint observation yet</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Last Result</span>
+            <span class="field-value" id="last-result">Unknown</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel card">
+        <h2>Unresolved Anomalies</h2>
+        <ul class="feed-list" id="anomaly-feed">
+          <li class="empty">No anomalies loaded yet.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="panel map-wrap">
+      <div class="map-head">
+        <h2>Patrol Floor Map</h2>
+      </div>
+      <div class="map-stage">
+        <div id="floormap"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/ui/floormap.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      var token = new URLSearchParams(window.location.search).get("token");
+      var refreshButton = document.getElementById("refresh-button");
+      var triggerButton = document.getElementById("trigger-button");
+      var suspendButton = document.getElementById("suspend-button");
+      var resumeButton = document.getElementById("resume-button");
+      var estopButton = document.getElementById("estop-button");
+      var estopReleaseButton = document.getElementById("estop-release-button");
+      var messageTitle = document.getElementById("message-title");
+      var messageText = document.getElementById("message-text");
+      var connectionText = document.getElementById("connection-text");
+      var connectionDot = document.getElementById("connection-dot");
+
+      var state = {
+        routes: [],
+        routeIndex: {},
+        zones: [],
+        anomalies: [],
+        latestCycles: [],
+        patrolStatus: null,
+        telemetry: null,
+        lastObservation: null,
+        socket: null,
+        reconnectTimer: null,
+        map: null
+      };
+
+      function setMessage(title, text) {
+        messageTitle.textContent = title;
+        messageText.textContent = text;
+      }
+
+      function setConnectionStatus(label, tone) {
+        connectionText.textContent = label;
+        connectionDot.style.background = tone === "success"
+          ? "var(--success)"
+          : tone === "warning"
+          ? "var(--warning)"
+          : tone === "critical"
+          ? "var(--critical)"
+          : "var(--muted)";
+      }
+
+      function setControlsDisabled(disabled) {
+        [
+          refreshButton,
+          triggerButton,
+          suspendButton,
+          resumeButton,
+          estopButton,
+          estopReleaseButton
+        ].forEach(function (button) {
+          button.disabled = disabled;
+        });
+      }
+
+      function severityBadgeClass(severity) {
+        if (severity === "critical") {
+          return "badge badge-critical";
+        }
+        if (severity === "warning") {
+          return "badge badge-warning";
+        }
+        return "badge badge-info";
+      }
+
+      function authHeaders() {
+        return {
+          "Authorization": "Bearer " + token,
+          "Content-Type": "application/json"
+        };
+      }
+
+      async function apiFetch(path, options) {
+        var response = await fetch(path, Object.assign({
+          headers: authHeaders()
+        }, options || {}));
+
+        if (!response.ok) {
+          var detail = "Request failed";
+          try {
+            var payload = await response.json();
+            detail = payload.detail || payload.message || detail;
+          } catch (_error) {
+            detail = response.status + " " + response.statusText;
+          }
+          throw new Error(detail);
+        }
+
+        if (response.status === 204) {
+          return null;
+        }
+        return response.json();
+      }
+
+      function routeName(routeId) {
+        var route = state.routeIndex[routeId];
+        if (!route) {
+          return routeId || "Unknown";
+        }
+        return route.name + " (" + route.id + ")";
+      }
+
+      function updateStatusBar() {
+        var patrolStatus = state.patrolStatus || {};
+        var suspended = Boolean(patrolStatus.dispatcher_suspended || patrolStatus.scheduler_suspended);
+        var active = Boolean(patrolStatus.active_cycle_id);
+        var statusLabel = suspended ? "Suspended" : active ? "Active" : "Idle";
+        var detail = suspended ? "Manual or safety suspension in effect" : active ? "Patrol cycle in progress" : "Waiting for next patrol";
+
+        document.getElementById("patrol-state").textContent = statusLabel;
+        document.getElementById("patrol-state-detail").textContent = detail;
+        document.getElementById("active-cycle").textContent = patrolStatus.active_cycle_id || "None";
+        document.getElementById("active-route").textContent = "Route: " + (patrolStatus.active_route_id || "None");
+        document.getElementById("failure-count").textContent = String(patrolStatus.consecutive_failures || 0);
+        document.getElementById("scheduler-state").textContent = patrolStatus.scheduler_suspended ? "Scheduler suspended" : "Scheduler normal";
+        document.getElementById("last-result").textContent = patrolStatus.last_result || "Unknown";
+        document.getElementById("cycle-route").textContent = routeName(patrolStatus.active_route_id);
+      }
+
+      function updateTelemetryCard() {
+        if (!state.telemetry) {
+          document.getElementById("battery-value").textContent = "Unknown";
+          document.getElementById("robot-mode").textContent = "No telemetry yet";
+          return;
+        }
+
+        var batteryText = typeof state.telemetry.battery_pct === "number"
+          ? String(state.telemetry.battery_pct) + "%"
+          : "Unknown";
+        document.getElementById("battery-value").textContent = batteryText;
+        document.getElementById("robot-mode").textContent =
+          (state.telemetry.mode || "Unknown mode") +
+          (state.telemetry.connection_ok === false ? ", connection degraded" : ", connection stable");
+      }
+
+      function updateCyclePanel() {
+        var activeId = state.patrolStatus && state.patrolStatus.active_cycle_id;
+        var activeCycle = null;
+        state.latestCycles.forEach(function (cycle) {
+          if (cycle.cycle_id === activeId) {
+            activeCycle = cycle;
+          }
+        });
+        if (!activeCycle && state.latestCycles.length) {
+          activeCycle = state.latestCycles[0];
+        }
+
+        if (activeCycle) {
+          document.getElementById("cycle-progress").textContent = activeCycle.waypoints_observed + " / " + activeCycle.waypoints_total;
+          if (!state.patrolStatus || !state.patrolStatus.active_route_id) {
+            document.getElementById("cycle-route").textContent = routeName(activeCycle.route_id);
+          }
+        } else {
+          document.getElementById("cycle-progress").textContent = "0 / 0";
+        }
+
+        if (state.lastObservation) {
+          document.getElementById("last-observation").textContent =
+            state.lastObservation.zone + " · " + state.lastObservation.result;
+        } else {
+          document.getElementById("last-observation").textContent = "No waypoint observation yet";
+        }
+      }
+
+      function renderAnomalies() {
+        var feed = document.getElementById("anomaly-feed");
+        feed.innerHTML = "";
+
+        if (!state.anomalies.length) {
+          var empty = document.createElement("li");
+          empty.className = "empty";
+          empty.textContent = "No unresolved anomalies.";
+          feed.appendChild(empty);
+          return;
+        }
+
+        state.anomalies.forEach(function (anomaly) {
+          var item = document.createElement("li");
+          item.className = "feed-item";
+
+          var copy = document.createElement("div");
+          copy.className = "feed-copy";
+
+          var title = document.createElement("div");
+          title.className = "feed-title";
+          title.innerHTML =
+            "<span>" + anomaly.anomaly_id + "</span>" +
+            '<span class="' + severityBadgeClass(anomaly.severity) + '">' + anomaly.severity + "</span>";
+
+          var meta = document.createElement("div");
+          meta.className = "feed-meta";
+          meta.textContent = anomaly.zone_id + " · " + anomaly.detected_at;
+
+          copy.appendChild(title);
+          copy.appendChild(meta);
+
+          var resolveButton = document.createElement("button");
+          resolveButton.className = "btn-muted";
+          resolveButton.type = "button";
+          resolveButton.textContent = "Resolve";
+          resolveButton.addEventListener("click", function () {
+            resolveAnomaly(anomaly.anomaly_id);
+          });
+
+          item.appendChild(copy);
+          item.appendChild(resolveButton);
+          feed.appendChild(item);
+        });
+      }
+
+      function refreshMap() {
+        if (!state.map) {
+          return;
+        }
+        state.map.setRoutes(state.routes);
+        state.map.setZones(state.zones);
+
+        state.anomalies.forEach(function (anomaly) {
+          state.map.markAnomaly(anomaly.zone_id, anomaly.severity);
+        });
+
+        if (state.telemetry && state.telemetry.position) {
+          state.map.updateRobotPosition(state.telemetry.position);
+        }
+      }
+
+      async function refreshData() {
+        if (!token) {
+          return;
+        }
+
+        try {
+          var results = await Promise.all([
+            apiFetch("/patrol/status"),
+            apiFetch("/patrol/cycles?limit=20"),
+            apiFetch("/patrol/anomalies?resolved=false"),
+            apiFetch("/patrol/routes"),
+            apiFetch("/patrol/zones")
+          ]);
+
+          state.patrolStatus = results[0];
+          state.latestCycles = results[1];
+          state.anomalies = results[2];
+          state.routes = results[3];
+          state.zones = results[4];
+          state.routeIndex = {};
+          state.routes.forEach(function (route) {
+            state.routeIndex[route.id] = route;
+          });
+
+          updateStatusBar();
+          updateCyclePanel();
+          renderAnomalies();
+          refreshMap();
+          setMessage("Patrol data refreshed", "Supervisor dashboard synchronized with the patrol API.");
+        } catch (error) {
+          setMessage("Refresh failed", error.message);
+        }
+      }
+
+      async function resolveAnomaly(anomalyId) {
+        try {
+          await apiFetch("/patrol/anomalies/" + encodeURIComponent(anomalyId) + "/resolve", {
+            method: "POST",
+            body: JSON.stringify({ resolved_by: "supervisor" })
+          });
+          state.map.clearAnomaly(anomalyId);
+          await refreshData();
+          setMessage("Anomaly resolved", anomalyId + " marked as resolved.");
+        } catch (error) {
+          setMessage("Resolve failed", error.message);
+        }
+      }
+
+      async function triggerNow() {
+        if (!state.routes.length) {
+          setMessage("No patrol route available", "Create a patrol route before triggering a new cycle.");
+          return;
+        }
+
+        try {
+          var route = state.routes[0];
+          await apiFetch("/patrol/trigger", {
+            method: "POST",
+            body: JSON.stringify({ route_id: route.id, triggered_by: "manual" })
+          });
+          await refreshData();
+          setMessage("Patrol triggered", "Triggered route " + route.id + ".");
+        } catch (error) {
+          setMessage("Trigger failed", error.message);
+        }
+      }
+
+      async function suspendPatrol() {
+        try {
+          await apiFetch("/patrol/suspend", {
+            method: "POST",
+            body: JSON.stringify({ reason: "manual suspension" })
+          });
+          await refreshData();
+          setMessage("Patrol suspended", "Scheduler and dispatcher were asked to suspend.");
+        } catch (error) {
+          setMessage("Suspend failed", error.message);
+        }
+      }
+
+      async function resumePatrol() {
+        try {
+          await apiFetch("/patrol/resume", { method: "POST" });
+          await refreshData();
+          setMessage("Patrol resumed", "Scheduler and dispatcher were asked to resume.");
+        } catch (error) {
+          setMessage("Resume failed", error.message);
+        }
+      }
+
+      async function triggerEstop() {
+        try {
+          await apiFetch("/estop", { method: "POST" });
+          setMessage("Emergency stop triggered", "Quadruped passive mode requested.");
+        } catch (error) {
+          setMessage("E-Stop failed", error.message);
+        }
+      }
+
+      async function releaseEstop() {
+        try {
+          await apiFetch("/estop/release", { method: "POST" });
+          setMessage("Emergency stop released", "Stand up requested.");
+        } catch (error) {
+          setMessage("Release failed", error.message);
+        }
+      }
+
+      function handleEvent(payload) {
+        var eventName = payload.event_name;
+        var eventPayload = payload.payload || {};
+
+        if (eventName === "quadruped.telemetry") {
+          state.telemetry = eventPayload;
+          updateTelemetryCard();
+          if (eventPayload.position) {
+            state.map.updateRobotPosition(eventPayload.position);
+          }
+        }
+
+        if (eventName === "patrol.waypoint.observed") {
+          state.lastObservation = {
+            zone: eventPayload.zone_id || "unknown zone",
+            result: eventPayload.severity || "observed"
+          };
+          updateCyclePanel();
+          if (eventPayload.zone_id && eventPayload.severity) {
+            state.map.updateStatus("Observed " + eventPayload.zone_id + " as " + eventPayload.severity);
+          }
+        }
+
+        if (eventName === "patrol.anomaly.detected") {
+          state.map.markAnomaly(eventPayload.zone_id, eventPayload.severity || "warning");
+        }
+
+        if (eventName === "patrol.anomaly.cleared") {
+          if (eventPayload.zone_id) {
+            state.map.clearAnomaly(eventPayload.zone_id);
+          }
+        }
+
+        if (eventName === "battery.warn" || eventName === "battery.critical" || eventName === "battery.recharged") {
+          if (typeof eventPayload.battery_pct === "number") {
+            state.telemetry = Object.assign({}, state.telemetry || {}, eventPayload);
+            updateTelemetryCard();
+          }
+        }
+
+        if (eventName === "estop.triggered") {
+          setMessage("Emergency stop triggered", "Patrol emergency stop event received.");
+        } else if (eventName === "estop.released") {
+          setMessage("Emergency stop released", "Patrol emergency stop release event received.");
+        } else if (eventName === "system.alert") {
+          setMessage("System alert", eventPayload.message || eventPayload.reason || "Unknown alert");
+        } else if (eventName === "patrol.suspended") {
+          setMessage("Patrol suspended", eventPayload.reason || "Suspension event received.");
+        } else if (eventName === "patrol.resumed") {
+          setMessage("Patrol resumed", eventPayload.reason || "Resume event received.");
+        } else if (eventName === "patrol.cycle.failed") {
+          setMessage("Patrol cycle failed", eventPayload.reason || "Cycle failure reported.");
+        } else if (eventName === "patrol.cycle.completed") {
+          setMessage("Patrol cycle completed", eventPayload.cycle_id || "Cycle completed.");
+        } else if (eventName === "patrol.cycle.started") {
+          setMessage("Patrol cycle started", eventPayload.cycle_id || "Cycle started.");
+        }
+
+        if (
+          eventName === "patrol.cycle.started" ||
+          eventName === "patrol.cycle.completed" ||
+          eventName === "patrol.cycle.failed" ||
+          eventName === "patrol.suspended" ||
+          eventName === "patrol.resumed" ||
+          eventName === "patrol.anomaly.detected" ||
+          eventName === "patrol.anomaly.cleared"
+        ) {
+          refreshData();
+        }
+      }
+
+      function scheduleReconnect() {
+        if (state.reconnectTimer) {
+          return;
+        }
+        setConnectionStatus("Reconnecting", "warning");
+        state.reconnectTimer = window.setTimeout(function () {
+          state.reconnectTimer = null;
+          connectSocket();
+        }, 3000);
+      }
+
+      function connectSocket() {
+        if (!token) {
+          return;
+        }
+        if (state.socket && (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING)) {
+          return;
+        }
+
+        var protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        var socketUrl = protocol + "//" + window.location.host + "/ws?token=" + encodeURIComponent(token);
+        setConnectionStatus("Connecting", "warning");
+
+        try {
+          state.socket = new WebSocket(socketUrl);
+        } catch (error) {
+          setMessage("WebSocket failed", error.message);
+          scheduleReconnect();
+          return;
+        }
+
+        state.socket.addEventListener("open", function () {
+          setConnectionStatus("Connected", "success");
+        });
+
+        state.socket.addEventListener("message", function (event) {
+          try {
+            handleEvent(JSON.parse(event.data));
+          } catch (error) {
+            setMessage("Event parse failed", error.message);
+          }
+        });
+
+        state.socket.addEventListener("close", function () {
+          state.socket = null;
+          setConnectionStatus("Disconnected", "critical");
+          scheduleReconnect();
+        });
+
+        state.socket.addEventListener("error", function () {
+          setConnectionStatus("Disconnected", "critical");
+        });
+      }
+
+      function initMap() {
+        if (window.PatrolFloorMap) {
+          state.map = window.PatrolFloorMap.create("#floormap", {
+            title: "Patrol Sector Overlay"
+          });
+          state.map.updateStatus("Awaiting patrol routes and zones");
+        }
+      }
+
+      function bindControls() {
+        refreshButton.addEventListener("click", refreshData);
+        triggerButton.addEventListener("click", triggerNow);
+        suspendButton.addEventListener("click", suspendPatrol);
+        resumeButton.addEventListener("click", resumePatrol);
+        estopButton.addEventListener("click", triggerEstop);
+        estopReleaseButton.addEventListener("click", releaseEstop);
+      }
+
+      function init() {
+        initMap();
+        bindControls();
+
+        if (!token) {
+          setControlsDisabled(true);
+          setMessage("Missing supervisor token", "Open /ui/supervisor.html?token=<supervisor-token> to authorize patrol API and /ws access.");
+          return;
+        }
+
+        setControlsDisabled(false);
+        refreshData();
+        connectSocket();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

@@ -88,6 +88,47 @@ class NavigationSection(BaseModel):
         return value
 
 
+class PatrolSection(BaseModel):
+    schedule_enabled: bool = True
+    patrol_interval_seconds: int = Field(default=1800, gt=0)
+    observation_dwell_seconds: float = Field(default=3.0, gt=0)
+    anomaly_cooldown_seconds: float = Field(default=300.0, ge=0)
+    max_consecutive_failures: int = Field(default=3, gt=0)
+    alert_on_anomaly: bool = True
+
+
+class VisionSection(BaseModel):
+    allowed_providers: ClassVar[set[str]] = {"claude", "local_yolo", "none"}
+    allowed_offline_fallback_modes: ClassVar[set[str]] = {"conservative", "local_model", "disabled"}
+
+    enabled: bool = False
+    provider: str = "claude"
+    claude_model: str = "claude-sonnet-4-20250514"
+    claude_max_tokens: int = Field(default=500, gt=0)
+    frame_width: int = Field(default=640, gt=0)
+    frame_height: int = Field(default=480, gt=0)
+    sharpness_threshold: float = Field(default=50.0, ge=0)
+    offline_fallback_mode: str = "conservative"
+    zones_file: str = "data/zones.yaml"
+    api_timeout_seconds: float = Field(default=10.0, gt=0)
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value: str) -> str:
+        if value not in cls.allowed_providers:
+            allowed = ", ".join(sorted(cls.allowed_providers))
+            raise ValueError(f"vision.provider must be one of: {allowed}")
+        return value
+
+    @field_validator("offline_fallback_mode")
+    @classmethod
+    def validate_offline_fallback_mode(cls, value: str) -> str:
+        if value not in cls.allowed_offline_fallback_modes:
+            allowed = ", ".join(sorted(cls.allowed_offline_fallback_modes))
+            raise ValueError(f"vision.offline_fallback_mode must be one of: {allowed}")
+        return value
+
+
 class TaskScoringSection(BaseModel):
     priority_weight: float = Field(default=100.0, ge=0)
     recency_weight: float = Field(default=10.0, ge=0)
@@ -176,6 +217,8 @@ class AppConfig(BaseModel):
     battery: BatterySection = Field(default_factory=BatterySection)
     heartbeat: HeartbeatSection = Field(default_factory=HeartbeatSection)
     navigation: NavigationSection = Field(default_factory=NavigationSection)
+    patrol: PatrolSection = Field(default_factory=PatrolSection)
+    vision: VisionSection = Field(default_factory=VisionSection)
     task_scoring: TaskScoringSection = Field(default_factory=TaskScoringSection)
     logging: LoggingSection = Field(default_factory=LoggingSection)
     api: ApiSection = Field(default_factory=ApiSection)

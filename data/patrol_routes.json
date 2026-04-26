@@ -1,0 +1,63 @@
+{
+  "routes": [
+    {
+      "id": "PATROL_NORTH_LOOP",
+      "name": "Patrol North Loop",
+      "origin_id": "DOCK",
+      "destination_id": "DOCK",
+      "active": true,
+      "waypoints": [
+        {
+          "name": "dock_exit",
+          "x": 0.0,
+          "y": 0.0,
+          "heading_deg": 0.0,
+          "velocity": 0.25,
+          "hold": false,
+          "metadata": {
+            "observe": false
+          }
+        },
+        {
+          "name": "north_observation_1",
+          "x": 5.0,
+          "y": 2.0,
+          "heading_deg": 30.0,
+          "velocity": 0.2,
+          "hold": true,
+          "metadata": {
+            "zone_id": "PLANTATION_NORTH",
+            "observe": true
+          }
+        },
+        {
+          "name": "warehouse_observation_1",
+          "x": 8.0,
+          "y": -2.0,
+          "heading_deg": -45.0,
+          "velocity": 0.2,
+          "hold": true,
+          "metadata": {
+            "zone_id": "WAREHOUSE_PERIMETER",
+            "observe": true
+          }
+        },
+        {
+          "name": "dock_return",
+          "x": 0.0,
+          "y": 0.0,
+          "heading_deg": 180.0,
+          "velocity": 0.25,
+          "hold": false,
+          "metadata": {
+            "observe": false
+          }
+        }
+      ],
+      "metadata": {
+        "route_type": "patrol",
+        "notes": "Phase 1 sample patrol loop"
+      }
+    }
+  ]
+}

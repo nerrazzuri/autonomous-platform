@@ -55,6 +55,14 @@ class EventName(str, Enum):
 
     ESTOP_TRIGGERED = "estop.triggered"
     ESTOP_RELEASED = "estop.released"
+    PATROL_CYCLE_STARTED = "patrol.cycle.started"
+    PATROL_CYCLE_COMPLETED = "patrol.cycle.completed"
+    PATROL_CYCLE_FAILED = "patrol.cycle.failed"
+    PATROL_WAYPOINT_OBSERVED = "patrol.waypoint.observed"
+    PATROL_ANOMALY_DETECTED = "patrol.anomaly.detected"
+    PATROL_ANOMALY_CLEARED = "patrol.anomaly.cleared"
+    PATROL_SUSPENDED = "patrol.suspended"
+    PATROL_RESUMED = "patrol.resumed"
 
 
 @dataclass(frozen=True)

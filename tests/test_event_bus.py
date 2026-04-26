@@ -258,6 +258,19 @@ async def test_event_contains_event_id_timestamp_payload_source_task_id_correlat
     assert event.correlation_id == "corr-7"
 
 
+def test_patrol_event_names_are_available() -> None:
+    from core.event_bus import EventName
+
+    assert EventName.PATROL_CYCLE_STARTED.value == "patrol.cycle.started"
+    assert EventName.PATROL_CYCLE_COMPLETED.value == "patrol.cycle.completed"
+    assert EventName.PATROL_CYCLE_FAILED.value == "patrol.cycle.failed"
+    assert EventName.PATROL_WAYPOINT_OBSERVED.value == "patrol.waypoint.observed"
+    assert EventName.PATROL_ANOMALY_DETECTED.value == "patrol.anomaly.detected"
+    assert EventName.PATROL_ANOMALY_CLEARED.value == "patrol.anomaly.cleared"
+    assert EventName.PATROL_SUSPENDED.value == "patrol.suspended"
+    assert EventName.PATROL_RESUMED.value == "patrol.resumed"
+
+
 @pytest.mark.asyncio
 async def test_runtime_context_is_set_during_callback(
     bus

@@ -74,6 +74,52 @@ def test_load_quadruped_sdk_lib_path_override(tmp_path: Path, monkeypatch: pytes
     assert config.quadruped.sdk_lib_path == "/opt/agibot/sdk"
 
 
+def test_default_config_includes_patrol_and_vision_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch)
+
+    config = module.AppConfig()
+
+    assert config.patrol.schedule_enabled is True
+    assert config.patrol.patrol_interval_seconds == 1800
+    assert config.patrol.observation_dwell_seconds == 3.0
+    assert config.patrol.anomaly_cooldown_seconds == 300.0
+    assert config.patrol.max_consecutive_failures == 3
+    assert config.patrol.alert_on_anomaly is True
+    assert config.vision.enabled is False
+    assert config.vision.provider == "claude"
+    assert config.vision.claude_model == "claude-sonnet-4-20250514"
+    assert config.vision.claude_max_tokens == 500
+    assert config.vision.frame_width == 640
+    assert config.vision.frame_height == 480
+    assert config.vision.sharpness_threshold == 50.0
+    assert config.vision.offline_fallback_mode == "conservative"
+    assert config.vision.zones_file == "data/zones.yaml"
+    assert config.vision.api_timeout_seconds == 10.0
+
+
+def test_config_example_includes_patrol_and_vision_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch, preserve_env=True)
+
+    config = module.load_config(ROOT / "config.yaml.example")
+
+    assert config.patrol.schedule_enabled is True
+    assert config.patrol.patrol_interval_seconds == 1800
+    assert config.patrol.observation_dwell_seconds == 3.0
+    assert config.patrol.anomaly_cooldown_seconds == 300.0
+    assert config.patrol.max_consecutive_failures == 3
+    assert config.patrol.alert_on_anomaly is True
+    assert config.vision.enabled is False
+    assert config.vision.provider == "claude"
+    assert config.vision.claude_model == "claude-sonnet-4-20250514"
+    assert config.vision.claude_max_tokens == 500
+    assert config.vision.frame_width == 640
+    assert config.vision.frame_height == 480
+    assert config.vision.sharpness_threshold == 50.0
+    assert config.vision.offline_fallback_mode == "conservative"
+    assert config.vision.zones_file == "data/zones.yaml"
+    assert config.vision.api_timeout_seconds == 10.0
+
+
 def test_invalid_port_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     module = load_config_module(monkeypatch, preserve_env=True)
     config_path = tmp_path / "config.yaml"

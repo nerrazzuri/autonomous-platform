@@ -197,6 +197,19 @@ async def test_handle_event_broadcasts_listed_event(ws_module) -> None:
     ]
 
 
+def test_patrol_events_are_relevant_to_websocket_broker(ws_module) -> None:
+    module, _event_bus = ws_module
+
+    assert module.EventName.PATROL_CYCLE_STARTED in module._RELEVANT_EVENT_NAMES
+    assert module.EventName.PATROL_CYCLE_COMPLETED in module._RELEVANT_EVENT_NAMES
+    assert module.EventName.PATROL_CYCLE_FAILED in module._RELEVANT_EVENT_NAMES
+    assert module.EventName.PATROL_WAYPOINT_OBSERVED in module._RELEVANT_EVENT_NAMES
+    assert module.EventName.PATROL_ANOMALY_DETECTED in module._RELEVANT_EVENT_NAMES
+    assert module.EventName.PATROL_ANOMALY_CLEARED in module._RELEVANT_EVENT_NAMES
+    assert module.EventName.PATROL_SUSPENDED in module._RELEVANT_EVENT_NAMES
+    assert module.EventName.PATROL_RESUMED in module._RELEVANT_EVENT_NAMES
+
+
 @pytest.mark.asyncio
 async def test_failed_send_removes_client(ws_module) -> None:
     module, event_bus = ws_module

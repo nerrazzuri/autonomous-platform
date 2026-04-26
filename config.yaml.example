@@ -42,6 +42,26 @@ navigation:
   obstacle_hold_timeout_seconds: 10.0
   position_source: "odometry"
 
+patrol:
+  schedule_enabled: true
+  patrol_interval_seconds: 1800
+  observation_dwell_seconds: 3.0
+  anomaly_cooldown_seconds: 300.0
+  max_consecutive_failures: 3
+  alert_on_anomaly: true
+
+vision:
+  enabled: false
+  provider: "claude"
+  claude_model: "claude-sonnet-4-20250514"
+  claude_max_tokens: 500
+  frame_width: 640
+  frame_height: 480
+  sharpness_threshold: 50.0
+  offline_fallback_mode: "conservative"
+  zones_file: "data/zones.yaml"
+  api_timeout_seconds: 10.0
+
 task_scoring:
   priority_weight: 100.0
   recency_weight: 10.0
