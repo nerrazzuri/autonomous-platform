@@ -236,6 +236,7 @@ class Dispatcher:
         robot_id = self._resolve_event_robot_id(event)
         if robot_id is None and self._registered_logistics_robot_ids():
             return
+        logger.info("Dispatcher received robot idle", extra={"robot_id": robot_id, "event_type": "robot_idle"})
         self._schedule_dispatch_for_robot(robot_id)
 
     async def _on_arrived_at_waypoint(self, event) -> None:
@@ -321,30 +322,33 @@ class Dispatcher:
         if result.blocked:
             await self._mark_failed_if_possible(task_id, "navigation blocked")
             self._last_result = "blocked"
-            logger.warning("Dispatcher marked task failed after blocked navigation", extra={"task_id": task_id})
+            logger.warning("Dispatcher marked task failed after blocked navigation", extra={"task_id": task_id, "robot_id": robot_id, "status": "failed"})
             return
         if result.cancelled:
             await self._mark_failed_if_possible(task_id, "navigation cancelled")
             self._last_result = "cancelled"
-            logger.warning("Dispatcher marked task failed after cancelled navigation", extra={"task_id": task_id})
+            logger.warning("Dispatcher marked task failed after cancelled navigation", extra={"task_id": task_id, "robot_id": robot_id, "status": "cancelled"})
             return
         if not result.success:
             await self._mark_failed_if_possible(task_id, result.message or "navigation failed")
             self._last_result = "failed"
-            logger.warning("Dispatcher marked task failed after navigation failure", extra={"task_id": task_id})
+            logger.warning("Dispatcher marked task failed after navigation failure", extra={"task_id": task_id, "robot_id": robot_id, "status": "failed"})
             return
 
         current_task = await self._task_queue.get_task(task_id)
         if current_task.status == "completed":
             self._last_result = "completed"
+            logger.info("Dispatcher completed task", extra={"task_id": task_id, "robot_id": robot_id, "status": "completed"})
             return
         if self._unload_confirmed_by_robot.get(robot_id, False) and current_task.status == "awaiting_unload":
             await self._task_queue.mark_completed(task_id)
             self._last_result = "completed"
+            logger.info("Dispatcher completed task after unload confirmation", extra={"task_id": task_id, "robot_id": robot_id, "status": "completed"})
             return
         if self._arrived_hold_counts.get(robot_id, 0) == 0:
             await self._task_queue.mark_completed(task_id)
             self._last_result = "completed"
+            logger.info("Dispatcher completed task after route execution", extra={"task_id": task_id, "robot_id": robot_id, "status": "completed"})
             return
 
         self._last_result = current_task.status
@@ -420,9 +424,20 @@ class Dispatcher:
                         "task_id": task.id,
                         "origin": task.station_id,
                         "destination": task.destination_id,
+                        "status": "selected",
                     },
                 )
                 await self._task_queue.mark_dispatched(task.id)
+                logger.info(
+                    "Dispatcher dispatched task",
+                    extra={
+                        "robot_id": resolved_robot_id,
+                        "task_id": task.id,
+                        "origin": task.station_id,
+                        "destination": task.destination_id,
+                        "status": "dispatched",
+                    },
+                )
 
             result = await navigator.execute_route(task.station_id, task.destination_id, task_id=task.id)
             await self._interpret_navigation_result(resolved_robot_id, task.id, result)

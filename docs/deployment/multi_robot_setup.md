@@ -102,3 +102,13 @@ Real robot provisioning requires:
 - SSH reachability to the robot while connected through the AP
 
 If the workstation cannot reach the robot AP or the factory WiFi, provisioning will fail even though the browser and CLI flows are available.
+
+## Recommended Local Retention
+
+For long-running factory deployments, keep local artifacts on a retention policy so disks do not fill unexpectedly:
+
+- logs: 30 days
+- audit JSONL: 180 days, or rotate externally if you need longer history
+- recordings and image captures: 7-30 days depending on disk capacity
+
+Run retention manually for now, or schedule it later with a cron job or systemd timer once your deployment process is stable.

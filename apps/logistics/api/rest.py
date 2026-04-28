@@ -16,9 +16,11 @@ from pydantic import BaseModel, Field
 from shared.api.alerts import get_alert_manager
 from shared.api.auth import require_operator, require_supervisor
 from shared.api.ws_broker import get_ws_broker, websocket_endpoint
+from shared.audit import AuditEvent, get_audit_store
 from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
+from shared.observability import Alert, emit_alert, get_alert_router, get_metrics_snapshot, get_robot_health, get_system_health
 from shared.navigation.route_store import RouteDefinition, RouteNotFoundError, RouteStore, RouteStoreError, Waypoint, get_route_store
 from shared.provisioning import provision_backend
 from shared.provisioning.provision_backend import ProvisioningError
@@ -50,6 +52,10 @@ class APIError(Exception):
 class HealthResponse(BaseModel):
     status: str
     service: str
+    runtime: dict[str, Any] | None = None
+    robots: list[dict[str, Any]] | None = None
+    audit: dict[str, Any] | None = None
+    provisioning: dict[str, Any] | None = None
 
 
 class CreateTaskRequest(BaseModel):
@@ -189,6 +195,44 @@ class ProvisionedRobotResponse(BaseModel):
     enabled: bool | None = None
 
 
+class AuditEventResponse(BaseModel):
+    event_id: str
+    timestamp: str
+    event_type: str
+    severity: str
+    actor_type: str
+    actor_id: str | None = None
+    robot_id: str | None = None
+    task_id: str | None = None
+    cycle_id: str | None = None
+    route_id: str | None = None
+    job_id: str | None = None
+    message: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AlertResponse(BaseModel):
+    alert_id: str
+    timestamp: str
+    severity: str
+    source: str
+    event_type: str
+    message: str
+    robot_id: str | None = None
+    task_id: str | None = None
+    cycle_id: str | None = None
+    route_id: str | None = None
+    job_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    acknowledged: bool = False
+    acknowledged_at: str | None = None
+    acknowledged_by: str | None = None
+
+
+class AcknowledgeAlertRequest(BaseModel):
+    actor_id: str | None = None
+
+
 def get_task_queue_dep() -> TaskQueue:
     return get_task_queue()
 
@@ -252,6 +296,51 @@ def _set_provision_job(job_id: str, **updates: Any) -> None:
         _PROVISIONING_JOBS[job_id] = current
 
 
+def _append_audit_event(
+    *,
+    event_type: str,
+    severity: str = "info",
+    actor_type: str = "system",
+    actor_id: str | None = None,
+    robot_id: str | None = None,
+    task_id: str | None = None,
+    cycle_id: str | None = None,
+    route_id: str | None = None,
+    job_id: str | None = None,
+    message: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> AuditEvent | None:
+    try:
+        event = AuditEvent(
+            event_type=event_type,
+            severity=severity,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            robot_id=robot_id,
+            task_id=task_id,
+            cycle_id=cycle_id,
+            route_id=route_id,
+            job_id=job_id,
+            message=message,
+            metadata=metadata or {},
+        )
+        return get_audit_store().append(event)
+    except Exception:
+        logger.exception(
+            "Audit event append failed",
+            extra={"event_type": event_type, "robot_id": robot_id, "task_id": task_id, "job_id": job_id},
+        )
+        return None
+
+
+def _audit_event_to_response(event: AuditEvent) -> AuditEventResponse:
+    return AuditEventResponse(**event.to_dict())
+
+
+def _alert_to_response(alert: Alert) -> AlertResponse:
+    return AlertResponse(**alert.to_dict())
+
+
 def _run_provisioning_job(
     job_id: str,
     request: ProvisionRequest,
@@ -269,6 +358,24 @@ def _run_provisioning_job(
             ssh_password=request.ssh_password,
         )
         if not result.success:
+            _append_audit_event(
+                event_type="provisioning_failed",
+                severity="error",
+                actor_type="api",
+                robot_id=result.robot_id,
+                job_id=job_id,
+                message=safe_message or "Provisioning failed",
+                metadata={"role": request.role, "dog_mac": result.dog_mac, "dog_ip": result.dog_ip},
+            )
+            emit_alert(
+                severity="error",
+                source="provisioning",
+                event_type="provisioning_failed",
+                message=safe_message or "Provisioning failed",
+                robot_id=result.robot_id,
+                job_id=job_id,
+                metadata={"role": request.role, "dog_mac": result.dog_mac, "dog_ip": result.dog_ip},
+            )
             _set_provision_job(
                 job_id,
                 status="failed",
@@ -286,6 +393,34 @@ def _run_provisioning_job(
             display_name=display_name,
             sdk_lib_path=sdk_lib_path,
         )
+        _append_audit_event(
+            event_type="provisioning_succeeded",
+            severity="info",
+            actor_type="api",
+            robot_id=entry.get("robot_id"),
+            job_id=job_id,
+            message=safe_message or "Provisioning complete",
+            metadata={
+                "role": request.role,
+                "display_name": display_name,
+                "dog_mac": entry.get("mac"),
+                "dog_ip": entry.get("quadruped_ip"),
+            },
+        )
+        emit_alert(
+            severity="info",
+            source="provisioning",
+            event_type="provisioning_succeeded",
+            message=safe_message or "Provisioning complete",
+            robot_id=entry.get("robot_id"),
+            job_id=job_id,
+            metadata={
+                "role": request.role,
+                "display_name": display_name,
+                "dog_mac": entry.get("mac"),
+                "dog_ip": entry.get("quadruped_ip"),
+            },
+        )
         _set_provision_job(
             job_id,
             status="succeeded",
@@ -299,6 +434,24 @@ def _run_provisioning_job(
             str(exc),
             target_wifi_password=request.target_wifi_password,
             ssh_password=request.ssh_password,
+        )
+        _append_audit_event(
+            event_type="provisioning_failed",
+            severity="error",
+            actor_type="api",
+            robot_id=request.robot_id,
+            job_id=job_id,
+            message=safe_message or "Provisioning failed",
+            metadata={"role": request.role, "dog_ap_ssid": request.dog_ap_ssid},
+        )
+        emit_alert(
+            severity="error",
+            source="provisioning",
+            event_type="provisioning_failed",
+            message=safe_message or "Provisioning failed",
+            robot_id=request.robot_id,
+            job_id=job_id,
+            metadata={"role": request.role, "dog_ap_ssid": request.dog_ap_ssid},
         )
         _set_provision_job(job_id, status="failed", message=safe_message or "Provisioning failed")
 
@@ -523,11 +676,13 @@ def create_app() -> FastAPI:
     async def lifespan(_: FastAPI):
         await startup_system()
         await get_ws_broker().start()
+        await get_alert_router().start()
         await get_alert_manager().start()
         try:
             yield
         finally:
             await get_alert_manager().stop()
+            await get_alert_router().stop()
             await get_ws_broker().stop()
             await shutdown_system()
 
@@ -537,7 +692,22 @@ def create_app() -> FastAPI:
 
     @application.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
-        return HealthResponse(status="ok", service=config.app.name)
+        snapshot = await get_system_health()
+        return HealthResponse(**snapshot)
+
+    @application.get(
+        "/health/robots",
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def health_robots() -> list[dict[str, Any]]:
+        return await get_robot_health()
+
+    @application.get(
+        "/metrics",
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def metrics() -> dict[str, Any]:
+        return await get_metrics_snapshot()
 
     @application.get(
         "/provision/scan",
@@ -579,6 +749,23 @@ def create_app() -> FastAPI:
 
         job_id = str(uuid.uuid4())
         _set_provision_job(job_id, status="queued", message="Provisioning queued")
+        _append_audit_event(
+            event_type="provisioning_started",
+            severity="info",
+            actor_type="api",
+            robot_id=request.robot_id,
+            job_id=job_id,
+            message="Provisioning queued",
+            metadata={
+                "role": request.role,
+                "dog_ap_ssid": request.dog_ap_ssid,
+                "target_wifi_ssid": request.target_wifi_ssid,
+                "display_name": request.display_name,
+                "pc_wifi_iface": request.pc_wifi_iface,
+                "ssh_user": request.ssh_user,
+                "sdk_lib_path": request.sdk_lib_path,
+            },
+        )
         asyncio.create_task(
             asyncio.to_thread(
                 _run_provisioning_job,
@@ -643,6 +830,14 @@ def create_app() -> FastAPI:
             if "Unknown robot_id" in error_text:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_text) from exc
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=error_text) from exc
+        _append_audit_event(
+            event_type="robot_record_removed",
+            severity="warning",
+            actor_type="api",
+            robot_id=robot_id,
+            message="Provisioned robot record removed",
+            metadata={"role": removed.get("role"), "dog_mac": removed.get("mac")},
+        )
         return ProvisionedRobotResponse(
             robot_id=str(removed.get("robot_id")),
             display_name=removed.get("display_name"),
@@ -851,6 +1046,20 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Quadruped emergency stop unavailable",
             )
+        _append_audit_event(
+            event_type="estop_triggered",
+            severity="warning",
+            actor_type="api",
+            robot_id=robot_id,
+            message="Emergency stop triggered",
+        )
+        emit_alert(
+            severity="warning",
+            source="system",
+            event_type="estop_triggered",
+            message="Emergency stop triggered",
+            robot_id=robot_id,
+        )
         return MessageResponse(message="Emergency stop triggered")
 
     @application.post(
@@ -874,6 +1083,20 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Quadruped release unavailable",
             )
+        _append_audit_event(
+            event_type="estop_released",
+            severity="info",
+            actor_type="api",
+            robot_id=robot_id,
+            message="Emergency stop released",
+        )
+        emit_alert(
+            severity="info",
+            source="system",
+            event_type="estop_released",
+            message="Emergency stop released",
+            robot_id=robot_id,
+        )
         return MessageResponse(message="Emergency stop released")
 
     @application.post(
@@ -895,6 +1118,20 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Quadruped emergency stop unavailable",
             )
+        _append_audit_event(
+            event_type="estop_triggered",
+            severity="warning",
+            actor_type="api",
+            message="Emergency stop triggered",
+            metadata={"scope": "legacy"},
+        )
+        emit_alert(
+            severity="warning",
+            source="system",
+            event_type="estop_triggered",
+            message="Emergency stop triggered",
+            metadata={"scope": "legacy"},
+        )
         return MessageResponse(message="Emergency stop triggered")
 
     @application.post(
@@ -916,7 +1153,83 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Quadruped release unavailable",
             )
+        _append_audit_event(
+            event_type="estop_released",
+            severity="info",
+            actor_type="api",
+            message="Emergency stop released",
+            metadata={"scope": "legacy"},
+        )
+        emit_alert(
+            severity="info",
+            source="system",
+            event_type="estop_released",
+            message="Emergency stop released",
+            metadata={"scope": "legacy"},
+        )
         return MessageResponse(message="Emergency stop released")
+
+    @application.get(
+        "/alerts",
+        response_model=list[AlertResponse],
+        dependencies=[Depends(require_operator)],
+    )
+    async def list_alerts(
+        severity: str | None = Query(default=None),
+        robot_id: str | None = Query(default=None),
+        acknowledged: bool | None = Query(default=None),
+        limit: int = Query(default=100, ge=1),
+    ) -> list[AlertResponse]:
+        alerts = get_alert_router().list_alerts(
+            severity=severity,
+            robot_id=robot_id,
+            acknowledged=acknowledged,
+            limit=limit,
+        )
+        return [_alert_to_response(alert) for alert in alerts]
+
+    @application.get(
+        "/alerts/{alert_id}",
+        response_model=AlertResponse,
+        dependencies=[Depends(require_operator)],
+    )
+    async def get_alert(alert_id: str) -> AlertResponse:
+        alert = get_alert_router().get(alert_id)
+        if alert is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown alert: {alert_id}")
+        return _alert_to_response(alert)
+
+    @application.post(
+        "/alerts/{alert_id}/acknowledge",
+        response_model=AlertResponse,
+        dependencies=[Depends(require_operator)],
+    )
+    async def acknowledge_alert(alert_id: str, request: AcknowledgeAlertRequest | None = None) -> AlertResponse:
+        actor_id = request.actor_id if request is not None else None
+        try:
+            alert = get_alert_router().acknowledge(alert_id, actor_id=actor_id or "operator")
+        except LookupError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return _alert_to_response(alert)
+
+    @application.get(
+        "/audit/events",
+        response_model=list[AuditEventResponse],
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def list_audit_events(
+        robot_id: str | None = Query(default=None),
+        event_type: str | None = Query(default=None),
+        severity: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1),
+    ) -> list[AuditEventResponse]:
+        events = get_audit_store().list_events(
+            robot_id=robot_id,
+            event_type=event_type,
+            severity=severity,
+            limit=limit,
+        )
+        return [_audit_event_to_response(event) for event in events]
 
     @application.get(
         "/routes",

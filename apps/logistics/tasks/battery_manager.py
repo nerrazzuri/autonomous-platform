@@ -129,8 +129,8 @@ class BatteryManager:
             if self._charging_mode.get(resolved_robot_id, False):
                 self._last_result[resolved_robot_id] = "already in charging mode"
                 logger.warning(
-                    "Battery critical received while already in charging mode",
-                    extra={"robot_id": resolved_robot_id},
+                    "Battery critical suppressed because robot is already in charging mode",
+                    extra={"robot_id": resolved_robot_id, "status": "duplicate_suppressed"},
                 )
                 return
             self._charging_mode[resolved_robot_id] = True
@@ -140,7 +140,7 @@ class BatteryManager:
 
         logger.warning(
             "Battery critical received; entering charging mode",
-            extra={"battery_pct": battery_pct, "robot_id": resolved_robot_id},
+            extra={"battery_pct": battery_pct, "robot_id": resolved_robot_id, "status": "critical"},
         )
 
         should_pause_dispatcher = self._should_pause_dispatcher(resolved_robot_id)
@@ -177,6 +177,10 @@ class BatteryManager:
             self._dock_task_id[resolved_robot_id] = task.id
             self._dock_task_active[resolved_robot_id] = True
             self._last_result[resolved_robot_id] = "charging mode active"
+        logger.info(
+            "Battery manager created dock task",
+            extra={"robot_id": resolved_robot_id, "task_id": task.id, "status": "dock_task_created"},
+        )
 
         if should_pause_dispatcher:
             try:
@@ -216,6 +220,10 @@ class BatteryManager:
             self._dock_task_id.pop(resolved_robot_id, None)
             self._dispatcher_paused[resolved_robot_id] = False
             self._last_result[resolved_robot_id] = "charging mode cleared"
+        logger.info(
+            "Battery manager cleared charging mode after recharge",
+            extra={"robot_id": resolved_robot_id, "battery_pct": battery_pct, "status": "recharged"},
+        )
 
     def _subscribe_events(self) -> None:
         if self._subscription_ids:
