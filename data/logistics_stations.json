@@ -1,0 +1,54 @@
+{
+  "stations": [
+    {
+      "id": "A",
+      "name": "Production Line A",
+      "station_type": "production_line",
+      "x": 0.0,
+      "y": 0.0,
+      "metadata": {
+        "zone": "north"
+      }
+    },
+    {
+      "id": "B",
+      "name": "Production Line B",
+      "station_type": "production_line",
+      "x": 0.0,
+      "y": 4.0,
+      "metadata": {
+        "zone": "central"
+      }
+    },
+    {
+      "id": "C",
+      "name": "Production Line C",
+      "station_type": "production_line",
+      "x": 0.0,
+      "y": 8.0,
+      "metadata": {
+        "zone": "south"
+      }
+    },
+    {
+      "id": "QA",
+      "name": "QA Laboratory",
+      "station_type": "qa_lab",
+      "x": 5.0,
+      "y": 2.0,
+      "metadata": {
+        "receiving_bench": "bench-1"
+      }
+    },
+    {
+      "id": "DOCK",
+      "name": "Charging Dock",
+      "station_type": "charging_dock",
+      "x": 7.8,
+      "y": 0.0,
+      "metadata": {
+        "charger_id": "dock-alpha"
+      }
+    }
+  ]
+}

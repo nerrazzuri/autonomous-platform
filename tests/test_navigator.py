@@ -93,6 +93,10 @@ class FakeHeartbeat:
         self.commands.append((0.0, 0.0, 0.0, kwargs))
 
 
+class FakeSDKAdapter:
+    pass
+
+
 def make_route(route_id="A_TO_QA", *, hold=False, target=(1.0, 0.0)):
     from navigation.route_store import RouteDefinition, Waypoint
 
@@ -146,6 +150,46 @@ async def test_execute_route_completes_simple_route(navigator_env) -> None:
     assert result.completed_waypoints == 1
     assert any(command[0] > 0 for command in heartbeat.commands)
     assert heartbeat.cleared >= 1
+
+
+def test_constructor_accepts_sdk_adapter_and_robot_id() -> None:
+    import navigation.navigator as navigator_module
+
+    sdk_adapter = FakeSDKAdapter()
+    navigator = navigator_module.Navigator(
+        sdk_adapter=sdk_adapter,
+        route_store=FakeRouteStore([make_route()]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+        robot_id="robot-7",
+    )
+
+    assert navigator.robot_id == "robot-7"
+    assert navigator._sdk_adapter is sdk_adapter
+
+
+def test_constructor_rejects_empty_robot_id() -> None:
+    import navigation.navigator as navigator_module
+
+    with pytest.raises(navigator_module.NavigatorError, match="robot_id"):
+        navigator_module.Navigator(
+            route_store=FakeRouteStore([make_route()]),
+            state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+            heartbeat=FakeHeartbeat(),
+            robot_id="",
+        )
+
+
+def test_default_robot_id_is_default() -> None:
+    import navigation.navigator as navigator_module
+
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([make_route()]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+    )
+
+    assert navigator.robot_id == "default"
 
 
 @pytest.mark.asyncio
@@ -242,6 +286,36 @@ async def test_waypoint_hold_waits_for_confirmation_event(navigator_env) -> None
 
 
 @pytest.mark.asyncio
+async def test_robot_scoped_human_confirmation_ignores_other_robot(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    route = make_route(hold=True, target=(0.0, 0.0))
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+        waypoint_tolerance_m=0.1,
+        robot_id="robot-1",
+    )
+
+    task = asyncio.create_task(navigator.execute_route("A", "QA", task_id="task-hold"))
+    await asyncio.sleep(0.05)
+
+    from core.event_bus import EventName
+
+    await event_bus.publish(EventName.HUMAN_CONFIRMED_LOAD, {"task_id": "task-hold", "robot_id": "robot-2"})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await asyncio.sleep(0.05)
+
+    assert task.done() is False
+
+    await event_bus.publish(EventName.HUMAN_CONFIRMED_LOAD, {"task_id": "task-hold", "robot_id": "robot-1"})
+    await event_bus.wait_until_idle(timeout=1.0)
+    result = await asyncio.wait_for(task, timeout=1.0)
+
+    assert result.success is True
+
+
+@pytest.mark.asyncio
 async def test_cancel_navigation_stops_route(navigator_env) -> None:
     navigator_module, _ = navigator_env
     route = make_route(hold=True, target=(0.0, 0.0))
@@ -317,6 +391,33 @@ async def test_obstacle_cleared_resumes_navigation(navigator_env) -> None:
 
     assert result.success is True
     assert resumed_events
+    assert resumed_events[0].payload["robot_id"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_robot_scoped_obstacle_event_ignores_other_robot(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    route = make_route(target=(1.0, 0.0))
+    state_monitor = FakeStateMonitor([make_state(0.0, 0.0), make_state(1.0, 0.0)])
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=state_monitor,
+        heartbeat=FakeHeartbeat(),
+        waypoint_tolerance_m=0.1,
+        obstacle_hold_timeout_seconds=0.2,
+        robot_id="robot-1",
+    )
+
+    from core.event_bus import EventName
+
+    task = asyncio.create_task(navigator.execute_route("A", "QA"))
+    await asyncio.sleep(0.02)
+    await event_bus.publish(EventName.OBSTACLE_DETECTED, {"robot_id": "robot-2"})
+    await event_bus.wait_until_idle(timeout=1.0)
+
+    result = await asyncio.wait_for(task, timeout=1.0)
+
+    assert result.success is True
 
 
 @pytest.mark.asyncio
@@ -359,6 +460,44 @@ async def test_heartbeat_target_cleared_on_exit(navigator_env) -> None:
     await navigator.execute_route("A", "QA")
 
     assert heartbeat.commands[-1][0:3] == (0.0, 0.0, 0.0)
+
+
+@pytest.mark.asyncio
+async def test_published_events_include_robot_id(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    route = make_route(target=(0.0, 0.0))
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+        waypoint_tolerance_m=0.1,
+        robot_id="robot-9",
+    )
+    received = []
+
+    def callback(event):
+        received.append(event)
+
+    from core.event_bus import EventName
+
+    event_bus.subscribe(EventName.NAVIGATION_STARTED, callback, subscriber_name="test-nav-started")
+    event_bus.subscribe(
+        EventName.QUADRUPED_ARRIVED_AT_WAYPOINT,
+        callback,
+        subscriber_name="test-waypoint-arrival",
+    )
+    event_bus.subscribe(EventName.NAVIGATION_COMPLETED, callback, subscriber_name="test-nav-completed")
+
+    result = await navigator.execute_route("A", "QA", task_id="task-1")
+    await event_bus.wait_until_idle(timeout=1.0)
+
+    assert result.success is True
+    assert [event.name for event in received] == [
+        EventName.NAVIGATION_STARTED,
+        EventName.QUADRUPED_ARRIVED_AT_WAYPOINT,
+        EventName.NAVIGATION_COMPLETED,
+    ]
+    assert all(event.payload["robot_id"] == "robot-9" for event in received)
 
 
 @pytest.mark.asyncio

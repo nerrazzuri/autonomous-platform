@@ -20,12 +20,19 @@ def test_supervisor_html_exists_with_required_markers() -> None:
 
     assert "Supervisor Dashboard" in content
     assert "/ws" in content
+    assert "/robots" in content
+    assert "/robots/" in content
+    assert "/estop" in content
+    assert "/estop/release" in content
+    assert "/robots/\" + encodedRobotId + \"/estop" in content or "/robots/\" + encodeURIComponent(robotId) + \"/estop" in content
+    assert "/robots/\" + encodedRobotId + \"/estop/release" in content or "/robots/\" + encodeURIComponent(robotId) + \"/estop/release" in content
     assert "/quadruped/status" in content
     assert "/queue/status" in content
     assert "/tasks" in content
     assert "/routes" in content
-    assert "/estop" in content
-    assert "/estop/release" in content
+    assert "fleet-grid" in content
+    assert "selected-robot-details" in content
+    assert "fleet-map-layer" in content
     assert "token" in content
 
 

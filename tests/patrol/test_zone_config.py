@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -26,9 +26,9 @@ def test_time_rule_matches_normal_window() -> None:
 
     rule = TimeRule(after="08:00", before="17:00")
 
-    assert rule.matches(datetime(2026, 4, 26, 8, 0, tzinfo=UTC)) is True
-    assert rule.matches(datetime(2026, 4, 26, 12, 30, tzinfo=UTC)) is True
-    assert rule.matches(datetime(2026, 4, 26, 17, 1, tzinfo=UTC)) is False
+    assert rule.matches(datetime(2026, 4, 26, 8, 0, tzinfo=timezone.utc)) is True
+    assert rule.matches(datetime(2026, 4, 26, 12, 30, tzinfo=timezone.utc)) is True
+    assert rule.matches(datetime(2026, 4, 26, 17, 1, tzinfo=timezone.utc)) is False
 
 
 def test_time_rule_matches_midnight_crossover() -> None:
@@ -36,9 +36,9 @@ def test_time_rule_matches_midnight_crossover() -> None:
 
     rule = TimeRule(after="18:00", before="06:00")
 
-    assert rule.matches(datetime(2026, 4, 26, 21, 15, tzinfo=UTC)) is True
-    assert rule.matches(datetime(2026, 4, 27, 5, 45, tzinfo=UTC)) is True
-    assert rule.matches(datetime(2026, 4, 26, 12, 0, tzinfo=UTC)) is False
+    assert rule.matches(datetime(2026, 4, 26, 21, 15, tzinfo=timezone.utc)) is True
+    assert rule.matches(datetime(2026, 4, 27, 5, 45, tzinfo=timezone.utc)) is True
+    assert rule.matches(datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc)) is False
 
 
 def test_zone_definition_from_dict_and_to_prompt_fragment() -> None:

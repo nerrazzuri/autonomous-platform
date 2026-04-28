@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from shared.core.config import get_config
@@ -109,7 +109,7 @@ class PatrolWatchdog:
         if self._suspended:
             return True
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         if self._last_cycle_completed_at is not None:
             stalled_after = timedelta(seconds=self._patrol_interval_seconds * 3)
             if now - self._last_cycle_completed_at > stalled_after:
@@ -194,7 +194,7 @@ class PatrolWatchdog:
         self._subscription_ids = []
 
     async def _handle_cycle_completed(self, _event: Any) -> None:
-        await self._set_state(last_cycle_completed_at=datetime.now(UTC), last_alert_reason=None)
+        await self._set_state(last_cycle_completed_at=datetime.now(timezone.utc), last_alert_reason=None)
 
     async def _handle_patrol_suspended(self, _event: Any) -> None:
         await self._set_state(suspended=True)

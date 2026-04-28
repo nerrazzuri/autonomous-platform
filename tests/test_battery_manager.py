@@ -21,12 +21,14 @@ class FakeTaskQueue:
     def __init__(self):
         self.submitted = []
         self.fail = False
+        self.counter = 0
 
     async def submit_task(self, **kwargs):
         if self.fail:
             raise RuntimeError("submit failed")
+        self.counter += 1
         self.submitted.append(kwargs)
-        return FakeTask()
+        return FakeTask(kwargs.get("task_id", f"dock-task-{self.counter}"))
 
 
 class FakeDispatcher:
@@ -52,6 +54,33 @@ class FakeDispatcher:
 
 class FakeStateMonitor:
     pass
+
+
+class FakeRobotRegistry:
+    def __init__(self, platforms: list[object] | None = None):
+        self._platforms = {platform.robot_id: platform for platform in platforms or []}
+
+    def get(self, robot_id: str):
+        from shared.quadruped.robot_registry import RobotNotFoundError
+
+        try:
+            return self._platforms[robot_id]
+        except KeyError as exc:
+            raise RobotNotFoundError(f"Robot '{robot_id}' is not registered") from exc
+
+    def all(self):
+        return list(self._platforms.values())
+
+
+def make_robot_platform(robot_id: str):
+    return type(
+        "FakePlatform",
+        (),
+        {
+            "robot_id": robot_id,
+            "config": type("FakeConfig", (), {"connection": type("FakeConnection", (), {"robot_id": robot_id})()})(),
+        },
+    )()
 
 
 @pytest_asyncio.fixture
@@ -148,6 +177,138 @@ async def test_battery_critical_does_not_create_duplicate_dock_task(battery_mana
     await manager.handle_battery_critical(19)
 
     assert len(queue.submitted) == 1
+
+
+@pytest.mark.asyncio
+async def test_battery_critical_for_robot_01_only_affects_robot_01(battery_manager_env) -> None:
+    battery_manager_module, _ = battery_manager_env
+    queue = FakeTaskQueue()
+    registry = FakeRobotRegistry([make_robot_platform("robot_01"), make_robot_platform("robot_02")])
+    manager = battery_manager_module.BatteryManager(
+        task_queue=queue,
+        dispatcher=FakeDispatcher(),
+        state_monitor=FakeStateMonitor(),
+        robot_registry=registry,
+    )
+
+    await manager.handle_battery_critical(20, robot_id="robot_01")
+
+    assert manager._charging_mode["robot_01"] is True
+    assert manager._dock_task_active["robot_01"] is True
+    assert manager._charging_mode.get("robot_02", False) is False
+    assert manager._dock_task_active.get("robot_02", False) is False
+    assert len(queue.submitted) == 1
+    assert "robot_01" in queue.submitted[0]["task_id"]
+
+
+@pytest.mark.asyncio
+async def test_battery_critical_for_two_robots_is_independent(battery_manager_env) -> None:
+    battery_manager_module, _ = battery_manager_env
+    queue = FakeTaskQueue()
+    registry = FakeRobotRegistry([make_robot_platform("robot_01"), make_robot_platform("robot_02")])
+    manager = battery_manager_module.BatteryManager(
+        task_queue=queue,
+        dispatcher=FakeDispatcher(),
+        state_monitor=FakeStateMonitor(),
+        robot_registry=registry,
+    )
+
+    await manager.handle_battery_critical(20, robot_id="robot_01")
+    await manager.handle_battery_critical(19, robot_id="robot_02")
+
+    assert manager._charging_mode == {"robot_01": True, "robot_02": True}
+    assert manager._dock_task_active == {"robot_01": True, "robot_02": True}
+    assert len(queue.submitted) == 2
+    assert "robot_01" in queue.submitted[0]["task_id"]
+    assert "robot_02" in queue.submitted[1]["task_id"]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_battery_critical_for_same_robot_does_not_duplicate_dock_task(battery_manager_env) -> None:
+    battery_manager_module, _ = battery_manager_env
+    queue = FakeTaskQueue()
+    registry = FakeRobotRegistry([make_robot_platform("robot_01"), make_robot_platform("robot_02")])
+    manager = battery_manager_module.BatteryManager(
+        task_queue=queue,
+        dispatcher=FakeDispatcher(),
+        state_monitor=FakeStateMonitor(),
+        robot_registry=registry,
+    )
+
+    await manager.handle_battery_critical(20, robot_id="robot_01")
+    await manager.handle_battery_critical(19, robot_id="robot_01")
+
+    assert len(queue.submitted) == 1
+    assert list(manager._dock_task_id) == ["robot_01"]
+
+
+@pytest.mark.asyncio
+async def test_battery_recharged_for_robot_01_does_not_clear_robot_02(battery_manager_env) -> None:
+    battery_manager_module, _ = battery_manager_env
+    queue = FakeTaskQueue()
+    registry = FakeRobotRegistry([make_robot_platform("robot_01"), make_robot_platform("robot_02")])
+    manager = battery_manager_module.BatteryManager(
+        task_queue=queue,
+        dispatcher=FakeDispatcher(),
+        state_monitor=FakeStateMonitor(),
+        robot_registry=registry,
+    )
+
+    await manager.handle_battery_critical(20, robot_id="robot_01")
+    await manager.handle_battery_critical(19, robot_id="robot_02")
+    await manager.handle_battery_recharged(95, robot_id="robot_01")
+
+    assert manager._charging_mode.get("robot_01", False) is False
+    assert manager._dock_task_active.get("robot_01", False) is False
+    assert manager._dock_task_id.get("robot_01") is None
+    assert manager._charging_mode["robot_02"] is True
+    assert manager._dock_task_active["robot_02"] is True
+    assert manager._dock_task_id["robot_02"] is not None
+
+
+@pytest.mark.asyncio
+async def test_unknown_robot_id_event_is_ignored_safely(battery_manager_env) -> None:
+    battery_manager_module, event_bus = battery_manager_env
+    queue = FakeTaskQueue()
+    registry = FakeRobotRegistry([make_robot_platform("robot_01")])
+    manager = battery_manager_module.BatteryManager(
+        task_queue=queue,
+        dispatcher=FakeDispatcher(),
+        state_monitor=FakeStateMonitor(),
+        robot_registry=registry,
+    )
+
+    await manager.start()
+    await manager.handle_battery_critical(20, robot_id="robot_01")
+    await event_bus.publish("battery.critical", {"robot_id": "robot_999", "battery_pct": 18})
+    await event_bus.wait_until_idle(timeout=1.0)
+
+    assert manager._charging_mode["robot_01"] is True
+    assert len(queue.submitted) == 1
+
+    await manager.stop()
+
+
+@pytest.mark.asyncio
+async def test_legacy_no_robot_id_event_still_works(battery_manager_env) -> None:
+    battery_manager_module, event_bus = battery_manager_env
+    queue = FakeTaskQueue()
+    manager = battery_manager_module.BatteryManager(
+        task_queue=queue,
+        dispatcher=FakeDispatcher(),
+        state_monitor=FakeStateMonitor(),
+        robot_registry=FakeRobotRegistry(),
+    )
+
+    await manager.start()
+    await event_bus.publish("battery.critical", {"battery_pct": 20})
+    await event_bus.wait_until_idle(timeout=1.0)
+
+    assert manager._charging_mode["default"] is True
+    assert manager._dock_task_active["default"] is True
+    assert len(queue.submitted) == 1
+
+    await manager.stop()
 
 
 @pytest.mark.asyncio

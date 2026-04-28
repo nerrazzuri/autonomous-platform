@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from apps.patrol.observation.zone_config import ZoneDefinition
 
@@ -96,7 +96,7 @@ class AnomalyDecider:
         if analysis_result.zone_id != zone.zone_id:
             raise AnomalyDecisionError("analysis_result.zone_id must match zone.zone_id")
 
-        now = current_time if current_time is not None else datetime.now(UTC)
+        now = current_time if current_time is not None else datetime.now(timezone.utc)
 
         if not analysis_result.objects_detected:
             return DecisionResult(

@@ -153,6 +153,7 @@ class FakeDispatcher:
     def __init__(self, *, active_task_id: str | None = None, error: Exception | None = None):
         self.active_task_id = active_task_id
         self.error = error
+        self._active_tasks: dict[str, str] = {}
 
     async def get_state(self):
         if self.error is not None:
@@ -217,6 +218,42 @@ class FakeEventBus:
         return event
 
 
+class FakeRobotRegistry:
+    def __init__(self, platforms=None):
+        self._platforms = {platform.robot_id: platform for platform in platforms or []}
+
+    def get(self, robot_id: str):
+        from shared.quadruped.robot_registry import RobotNotFoundError
+
+        try:
+            return self._platforms[robot_id]
+        except KeyError as exc:
+            raise RobotNotFoundError(robot_id) from exc
+
+    def all(self):
+        return list(self._platforms.values())
+
+
+def make_robot_platform(
+    robot_id: str,
+    *,
+    role: str | None = "logistics",
+    state_monitor=None,
+    sdk_adapter=None,
+    display_name: str | None = None,
+):
+    return SimpleNamespace(
+        robot_id=robot_id,
+        state_monitor=state_monitor or FakeStateMonitor(),
+        sdk_adapter=sdk_adapter or FakeSDKAdapter(),
+        config=SimpleNamespace(
+            display_name=display_name,
+            role=role,
+            connection=SimpleNamespace(robot_id=robot_id, role=role),
+        ),
+    )
+
+
 @pytest.fixture
 def rest_client(monkeypatch: pytest.MonkeyPatch):
     from fastapi.testclient import TestClient
@@ -239,6 +276,7 @@ def rest_client(monkeypatch: pytest.MonkeyPatch):
     route_store = FakeRouteStore()
     dispatcher = FakeDispatcher()
     event_bus = FakeEventBus()
+    robot_registry = FakeRobotRegistry()
 
     monkeypatch.setattr(auth_module, "get_config", lambda: config)
     monkeypatch.setattr(rest_module, "get_task_queue_dep", lambda: queue)
@@ -247,10 +285,12 @@ def rest_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(rest_module, "get_sdk_adapter_dep", lambda: sdk)
     monkeypatch.setattr(rest_module, "get_route_store_dep", lambda: route_store)
     monkeypatch.setattr(rest_module, "get_event_bus", lambda: event_bus)
+    monkeypatch.setattr(rest_module, "get_robot_registry", lambda: robot_registry)
     monkeypatch.setattr(rest_module, "startup_system", _noop_async)
     monkeypatch.setattr(rest_module, "shutdown_system", _noop_async)
 
     app = rest_module.create_app()
+    rest_module._test_robot_registry = robot_registry
     return TestClient(app), queue, state_monitor, sdk, route_store, dispatcher, event_bus, rest_module
 
 
@@ -558,6 +598,163 @@ def test_estop_release_rejects_operator_token(rest_client) -> None:
 
     assert response.status_code == 403
     assert response.json()["detail"] == "Forbidden"
+
+
+def test_get_robots_returns_registered_logistics_robots(rest_client) -> None:
+    client, _, _, _, _, dispatcher, _event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    robot_01_monitor = FakeStateMonitor(current_state=make_state())
+    robot_02_state = make_state()
+    robot_02_state = replace(robot_02_state, battery_pct=64, position=(4.0, 5.0, 0.0), control_mode=7, connection_ok=False)
+    robot_02_monitor = FakeStateMonitor(current_state=robot_02_state)
+    registry._platforms = {
+        "logistics_01": make_robot_platform(
+            "logistics_01",
+            display_name="Logistics Robot 1",
+            state_monitor=robot_01_monitor,
+        ),
+        "logistics_02": make_robot_platform(
+            "logistics_02",
+            display_name="Logistics Robot 2",
+            state_monitor=robot_02_monitor,
+        ),
+        "patrol_01": make_robot_platform(
+            "patrol_01",
+            role="patrol",
+            state_monitor=FakeStateMonitor(current_state=make_state()),
+        ),
+    }
+    dispatcher._active_tasks = {"logistics_01": "task-a", "logistics_02": "task-b"}
+
+    response = client.get("/robots", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "robot_id": "logistics_01",
+            "display_name": "Logistics Robot 1",
+            "role": "logistics",
+            "connected": True,
+            "battery_pct": 88,
+            "position": {"x": 1.0, "y": 2.0, "z": 0.0},
+            "active_task_id": "task-a",
+            "mode": 3,
+        },
+        {
+            "robot_id": "logistics_02",
+            "display_name": "Logistics Robot 2",
+            "role": "logistics",
+            "connected": False,
+            "battery_pct": 64,
+            "position": {"x": 4.0, "y": 5.0, "z": 0.0},
+            "active_task_id": "task-b",
+            "mode": 7,
+        },
+    ]
+
+
+def test_get_robot_status_returns_requested_robot(rest_client) -> None:
+    client, _, _, _, _, dispatcher, _event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    robot_01_monitor = FakeStateMonitor(current_state=make_state())
+    robot_02_state = replace(make_state(), battery_pct=51, position=(9.0, 8.0, 0.0), control_mode=12)
+    robot_02_monitor = FakeStateMonitor(current_state=robot_02_state)
+    registry._platforms = {
+        "logistics_01": make_robot_platform("logistics_01", state_monitor=robot_01_monitor),
+        "logistics_02": make_robot_platform("logistics_02", state_monitor=robot_02_monitor),
+    }
+    dispatcher._active_tasks = {"logistics_01": "task-a", "logistics_02": "task-b"}
+
+    response = client.get("/robots/logistics_02/status", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "robot_id": "logistics_02",
+        "display_name": None,
+        "role": "logistics",
+        "connected": True,
+        "battery_pct": 51,
+        "position": {"x": 9.0, "y": 8.0, "z": 0.0},
+        "active_task_id": "task-b",
+        "mode": 12,
+    }
+
+
+def test_get_robot_status_unknown_robot_returns_404(rest_client) -> None:
+    client, *_ = rest_client
+
+    response = client.get("/robots/missing/status", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 404
+
+
+def test_robot_estop_affects_only_target_robot(rest_client) -> None:
+    client, _, _, _, _, _dispatcher, _event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    robot_01_sdk = FakeSDKAdapter()
+    robot_02_sdk = FakeSDKAdapter()
+    registry._platforms = {
+        "logistics_01": make_robot_platform("logistics_01", sdk_adapter=robot_01_sdk),
+        "logistics_02": make_robot_platform("logistics_02", sdk_adapter=robot_02_sdk),
+    }
+
+    response = client.post("/robots/logistics_01/estop", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 200
+    assert robot_01_sdk.passive_calls == 1
+    assert robot_02_sdk.passive_calls == 0
+
+
+def test_robot_estop_release_affects_only_target_robot(rest_client) -> None:
+    client, _, _, _, _, _dispatcher, _event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    robot_01_sdk = FakeSDKAdapter()
+    robot_02_sdk = FakeSDKAdapter()
+    registry._platforms = {
+        "logistics_01": make_robot_platform("logistics_01", sdk_adapter=robot_01_sdk),
+        "logistics_02": make_robot_platform("logistics_02", sdk_adapter=robot_02_sdk),
+    }
+
+    response = client.post("/robots/logistics_02/estop/release", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
+
+    assert response.status_code == 200
+    assert robot_01_sdk.stand_up_calls == 0
+    assert robot_02_sdk.stand_up_calls == 1
+
+
+def test_quadruped_status_uses_first_registered_robot_when_registry_populated(rest_client) -> None:
+    client, _, state_monitor, *_rest, dispatcher, _event_bus, rest_module = rest_client
+    state_monitor.current_state = None
+    robot_state = replace(make_state(), battery_pct=71, position=(7.0, 6.0, 0.0), control_mode=8)
+    registry = rest_module._test_robot_registry
+    registry._platforms = {
+        "logistics_01": make_robot_platform("logistics_01", state_monitor=FakeStateMonitor(current_state=robot_state)),
+        "logistics_02": make_robot_platform("logistics_02", state_monitor=FakeStateMonitor(current_state=make_state())),
+    }
+    dispatcher._active_tasks = {"logistics_01": "task-100"}
+
+    response = client.get("/quadruped/status", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 200
+    assert response.json()["battery_pct"] == 71
+    assert response.json()["active_task_id"] == "task-100"
+    assert response.json()["control_mode"] == 8
+
+
+def test_logistics_robots_endpoint_excludes_patrol_and_status_404s_for_patrol(rest_client) -> None:
+    client, _, _, _, _, _dispatcher, _event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    registry._platforms = {
+        "logistics_01": make_robot_platform("logistics_01", role="logistics", state_monitor=FakeStateMonitor(current_state=make_state())),
+        "patrol_01": make_robot_platform("patrol_01", role="patrol", state_monitor=FakeStateMonitor(current_state=make_state())),
+    }
+
+    list_response = client.get("/robots", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+    status_response = client.get("/robots/patrol_01/status", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert list_response.status_code == 200
+    assert [item["robot_id"] for item in list_response.json()] == ["logistics_01"]
+    assert status_response.status_code == 404
 
 
 def test_get_routes(rest_client) -> None:

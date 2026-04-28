@@ -125,6 +125,7 @@ async def test_full_startup_and_shutdown_without_hardware(monkeypatch: pytest.Mo
     monkeypatch.setattr(base_startup_module, "get_heartbeat_controller", lambda: LifecycleStub("heartbeat", calls))
     monkeypatch.setattr(base_startup_module, "get_state_monitor", lambda: LifecycleStub("state_monitor", calls))
     monkeypatch.setattr(base_startup_module, "get_obstacle_detector", lambda: LifecycleStub("obstacle", calls))
+    monkeypatch.setattr(base_startup_module, "_load_enabled_robot_configs", lambda _config: [])
     monkeypatch.setattr(main_module, "get_dispatcher", lambda: LifecycleStub("dispatcher", calls))
     monkeypatch.setattr(main_module, "get_battery_manager", lambda: LifecycleStub("battery", calls))
     monkeypatch.setattr(main_module, "get_watchdog", lambda: LifecycleStub("watchdog", calls))

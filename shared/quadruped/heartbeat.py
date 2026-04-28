@@ -48,14 +48,18 @@ class HeartbeatController:
         self,
         sdk_adapter: SDKAdapter | None = None,
         interval_seconds: float | None = None,
+        robot_id: str = "default",
     ):
         config = get_config()
         resolved_interval = interval_seconds if interval_seconds is not None else config.heartbeat.interval_seconds
         if resolved_interval <= 0:
             raise HeartbeatError("interval_seconds must be > 0")
+        if not isinstance(robot_id, str) or not robot_id.strip():
+            raise HeartbeatError("robot_id must be a non-empty string")
 
         self._sdk_adapter = sdk_adapter or get_sdk_adapter()
         self._interval_seconds = resolved_interval
+        self.robot_id = robot_id
         self._target_lock = asyncio.Lock()
         self._target_velocity = VelocityCommand.zero(source="heartbeat")
         self._task: asyncio.Task[None] | None = None
@@ -194,7 +198,9 @@ class HeartbeatController:
 
     def _safe_publish(self, event_name: EventName, payload: dict[str, object]) -> None:
         try:
-            get_event_bus().publish_nowait(event_name, payload=payload, source=__name__)
+            enriched_payload = dict(payload)
+            enriched_payload["robot_id"] = self.robot_id
+            get_event_bus().publish_nowait(event_name, payload=enriched_payload, source=__name__)
         except asyncio.QueueFull:
             logger.warning("Heartbeat event bus queue full", extra={"event_name": event_name.value})
         except Exception:

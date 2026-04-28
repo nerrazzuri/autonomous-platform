@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import importlib
 import sys
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -106,6 +107,21 @@ def make_route(route_id: str = "PATROL_NORTH_LOOP", *, route_type: str = "patrol
     )
 
 
+def make_state():
+    from shared.quadruped.sdk_adapter import QuadrupedMode
+    from shared.quadruped.state_monitor import QuadrupedState
+
+    return QuadrupedState(
+        timestamp=datetime.now(timezone.utc),
+        battery_pct=77,
+        position=(2.0, 3.0, 0.0),
+        rpy=(0.0, 0.0, 0.0),
+        control_mode=5,
+        connection_ok=True,
+        mode=QuadrupedMode.STANDING,
+    )
+
+
 class FakePatrolQueue:
     def __init__(self) -> None:
         self.cycles = {"cycle-1": make_cycle("cycle-1", status="completed")}
@@ -153,6 +169,8 @@ class FakePatrolDispatcher:
     def __init__(self) -> None:
         self.suspend_calls: list[str] = []
         self.resume_calls: list[str] = []
+        self._active_cycles: dict[str, str] = {}
+        self._active_routes: dict[str, str] = {}
 
     async def get_state(self):
         return SimpleNamespace(
@@ -234,6 +252,20 @@ class FakeSDKAdapter:
         return self.stand_up_result
 
 
+class FakeStateMonitor:
+    def __init__(self, current_state=None, poll_state=None):
+        self.current_state = current_state
+        self.poll_state = poll_state
+        self.poll_called = False
+
+    async def get_current_state(self):
+        return self.current_state
+
+    async def poll_once(self):
+        self.poll_called = True
+        return self.poll_state
+
+
 class FakeEventBus:
     def __init__(self) -> None:
         self.published: list[dict[str, object]] = []
@@ -248,6 +280,42 @@ class FakeEventBus:
         }
         self.published.append(event)
         return event
+
+
+class FakeRobotRegistry:
+    def __init__(self, platforms=None):
+        self._platforms = {platform.robot_id: platform for platform in platforms or []}
+
+    def get(self, robot_id: str):
+        from shared.quadruped.robot_registry import RobotNotFoundError
+
+        try:
+            return self._platforms[robot_id]
+        except KeyError as exc:
+            raise RobotNotFoundError(robot_id) from exc
+
+    def all(self):
+        return list(self._platforms.values())
+
+
+def make_robot_platform(
+    robot_id: str,
+    *,
+    role: str | None = "patrol",
+    state_monitor=None,
+    sdk_adapter=None,
+    display_name: str | None = None,
+):
+    return SimpleNamespace(
+        robot_id=robot_id,
+        state_monitor=state_monitor or FakeStateMonitor(),
+        sdk_adapter=sdk_adapter or FakeSDKAdapter(),
+        config=SimpleNamespace(
+            display_name=display_name,
+            role=role,
+            connection=SimpleNamespace(robot_id=robot_id, role=role),
+        ),
+    )
 
 
 class FakeBroker:
@@ -296,6 +364,7 @@ def rest_client(monkeypatch: pytest.MonkeyPatch):
     zone_config = FakeZoneConfig()
     sdk = FakeSDKAdapter()
     event_bus = FakeEventBus()
+    robot_registry = FakeRobotRegistry()
 
     monkeypatch.setattr(auth_module, "get_config", lambda: config)
     monkeypatch.setattr(rest_module, "get_patrol_queue_dep", lambda: queue)
@@ -307,12 +376,14 @@ def rest_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(rest_module, "get_zone_config_dep", lambda: zone_config)
     monkeypatch.setattr(rest_module, "get_sdk_adapter_dep", lambda: sdk)
     monkeypatch.setattr(rest_module, "get_event_bus", lambda: event_bus)
+    monkeypatch.setattr(rest_module, "get_robot_registry", lambda: robot_registry)
     monkeypatch.setattr(rest_module, "startup_system", _noop_async)
     monkeypatch.setattr(rest_module, "shutdown_system", _noop_async)
     monkeypatch.setattr(rest_module, "get_ws_broker", lambda: FakeBroker())
     monkeypatch.setattr(rest_module, "get_alert_manager", lambda: FakeAlertManager())
 
     app = rest_module.create_app()
+    rest_module._test_robot_registry = robot_registry
     return TestClient(app), queue, scheduler, dispatcher, watchdog, anomaly_log, route_store, zone_config, sdk, event_bus, rest_module
 
 
@@ -546,6 +617,137 @@ def test_estop_release_success(rest_client) -> None:
     assert response.status_code == 200
     assert response.json() == {"message": "Emergency stop released"}
     assert sdk.stand_up_calls == 1
+
+
+def test_get_robots_returns_registered_patrol_robots(rest_client) -> None:
+    client, _queue, _scheduler, dispatcher, _watchdog, _anomaly_log, _route_store, _zone_config, _sdk, _event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    robot_01_monitor = FakeStateMonitor(current_state=make_state())
+    robot_02_state = replace(make_state(), battery_pct=55, position=(9.0, 4.0, 0.0), control_mode=11, connection_ok=False)
+    robot_02_monitor = FakeStateMonitor(current_state=robot_02_state)
+    registry._platforms = {
+        "patrol_01": make_robot_platform("patrol_01", display_name="Patrol Robot 1", state_monitor=robot_01_monitor),
+        "patrol_02": make_robot_platform("patrol_02", display_name="Patrol Robot 2", state_monitor=robot_02_monitor),
+        "logistics_01": make_robot_platform("logistics_01", role="logistics", state_monitor=FakeStateMonitor(current_state=make_state())),
+    }
+    dispatcher._active_cycles = {"patrol_01": "cycle-a", "patrol_02": "cycle-b"}
+    dispatcher._active_routes = {"patrol_01": "ROUTE_A", "patrol_02": "ROUTE_B"}
+
+    response = client.get("/robots", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "robot_id": "patrol_01",
+            "display_name": "Patrol Robot 1",
+            "role": "patrol",
+            "connected": True,
+            "battery_pct": 77,
+            "position": {"x": 2.0, "y": 3.0, "z": 0.0},
+            "active_cycle_id": "cycle-a",
+            "active_route_id": "ROUTE_A",
+            "mode": 5,
+        },
+        {
+            "robot_id": "patrol_02",
+            "display_name": "Patrol Robot 2",
+            "role": "patrol",
+            "connected": False,
+            "battery_pct": 55,
+            "position": {"x": 9.0, "y": 4.0, "z": 0.0},
+            "active_cycle_id": "cycle-b",
+            "active_route_id": "ROUTE_B",
+            "mode": 11,
+        },
+    ]
+
+
+def test_get_robot_status_returns_requested_patrol_robot(rest_client) -> None:
+    client, _queue, _scheduler, dispatcher, _watchdog, _anomaly_log, _route_store, _zone_config, _sdk, _event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    robot_01_monitor = FakeStateMonitor(current_state=make_state())
+    robot_02_state = replace(make_state(), battery_pct=49, position=(6.0, 1.0, 0.0), control_mode=13)
+    robot_02_monitor = FakeStateMonitor(current_state=robot_02_state)
+    registry._platforms = {
+        "patrol_01": make_robot_platform("patrol_01", state_monitor=robot_01_monitor),
+        "patrol_02": make_robot_platform("patrol_02", state_monitor=robot_02_monitor),
+    }
+    dispatcher._active_cycles = {"patrol_02": "cycle-22"}
+    dispatcher._active_routes = {"patrol_02": "PATROL_SOUTH_LOOP"}
+
+    response = client.get("/robots/patrol_02/status", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "robot_id": "patrol_02",
+        "display_name": None,
+        "role": "patrol",
+        "connected": True,
+        "battery_pct": 49,
+        "position": {"x": 6.0, "y": 1.0, "z": 0.0},
+        "active_cycle_id": "cycle-22",
+        "active_route_id": "PATROL_SOUTH_LOOP",
+        "mode": 13,
+    }
+
+
+def test_get_robot_status_unknown_patrol_robot_returns_404(rest_client) -> None:
+    client, *_ = rest_client
+
+    response = client.get("/robots/missing/status", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
+
+    assert response.status_code == 404
+
+
+def test_robot_estop_affects_only_target_patrol_robot(rest_client) -> None:
+    client, _queue, _scheduler, _dispatcher, _watchdog, _anomaly_log, _route_store, _zone_config, _sdk, event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    patrol_01_sdk = FakeSDKAdapter()
+    patrol_02_sdk = FakeSDKAdapter()
+    registry._platforms = {
+        "patrol_01": make_robot_platform("patrol_01", sdk_adapter=patrol_01_sdk),
+        "patrol_02": make_robot_platform("patrol_02", sdk_adapter=patrol_02_sdk),
+    }
+
+    response = client.post("/robots/patrol_01/estop", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
+
+    assert response.status_code == 200
+    assert patrol_01_sdk.passive_calls == 1
+    assert patrol_02_sdk.passive_calls == 0
+    assert event_bus.published[-1]["payload"]["robot_id"] == "patrol_01"
+
+
+def test_robot_estop_release_affects_only_target_patrol_robot(rest_client) -> None:
+    client, _queue, _scheduler, _dispatcher, _watchdog, _anomaly_log, _route_store, _zone_config, _sdk, _event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    patrol_01_sdk = FakeSDKAdapter()
+    patrol_02_sdk = FakeSDKAdapter()
+    registry._platforms = {
+        "patrol_01": make_robot_platform("patrol_01", sdk_adapter=patrol_01_sdk),
+        "patrol_02": make_robot_platform("patrol_02", sdk_adapter=patrol_02_sdk),
+    }
+
+    response = client.post("/robots/patrol_02/estop/release", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
+
+    assert response.status_code == 200
+    assert patrol_01_sdk.stand_up_calls == 0
+    assert patrol_02_sdk.stand_up_calls == 1
+
+
+def test_patrol_robots_endpoint_excludes_logistics_and_status_404s_for_logistics(rest_client) -> None:
+    client, _queue, _scheduler, _dispatcher, _watchdog, _anomaly_log, _route_store, _zone_config, _sdk, _event_bus, rest_module = rest_client
+    registry = rest_module._test_robot_registry
+    registry._platforms = {
+        "patrol_01": make_robot_platform("patrol_01", role="patrol", state_monitor=FakeStateMonitor(current_state=make_state())),
+        "logistics_01": make_robot_platform("logistics_01", role="logistics", state_monitor=FakeStateMonitor(current_state=make_state())),
+    }
+
+    list_response = client.get("/robots", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
+    status_response = client.get("/robots/logistics_01/status", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))
+
+    assert list_response.status_code == 200
+    assert [item["robot_id"] for item in list_response.json()] == ["patrol_01"]
+    assert status_response.status_code == 404
 
 
 def test_auth_required_for_patrol_endpoints(rest_client) -> None:

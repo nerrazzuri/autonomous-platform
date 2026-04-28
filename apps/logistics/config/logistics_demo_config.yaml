@@ -1,0 +1,96 @@
+app:
+  name: "sumitomo-quadruped-logistics"
+  environment: "development"
+  timezone: "Asia/Singapore"
+
+quadruped:
+  quadruped_ip: "__QUADRUPED_IP__"
+  sdk_port: 43988
+  sdk_lib_path: "sdk/zsl-1"
+  connection_timeout_seconds: 5.0
+  auto_stand_on_startup: false
+
+workstation:
+  local_ip: "__LOCAL_IP__"
+  lan_ip: "__LOCAL_IP__"
+
+database:
+  sqlite_path: "data/logistics_quadruped.db"
+  telemetry_retention_hours: 48
+
+routes:
+  routes_file: "data/logistics_routes.json"
+  stations_file: "data/logistics_stations.json"
+  hot_reload_enabled: true
+
+battery:
+  warn_pct: 30
+  critical_pct: 25
+  resume_pct: 90
+  charging_poll_seconds: 30
+
+heartbeat:
+  interval_seconds: 0.02
+  sdk_timeout_seconds: 3.0
+
+navigation:
+  waypoint_tolerance_m: 0.25
+  heading_tolerance_deg: 10.0
+  max_forward_velocity: 0.35
+  max_yaw_rate: 0.6
+  obstacle_hold_timeout_seconds: 10.0
+  position_source: "odometry"
+
+patrol:
+  schedule_enabled: true
+  patrol_interval_seconds: 1800
+  observation_dwell_seconds: 3.0
+  anomaly_cooldown_seconds: 300.0
+  max_consecutive_failures: 3
+  alert_on_anomaly: true
+
+vision:
+  enabled: false
+  provider: "claude"
+  claude_model: "claude-sonnet-4-20250514"
+  claude_max_tokens: 500
+  frame_width: 640
+  frame_height: 480
+  sharpness_threshold: 50.0
+  offline_fallback_mode: "conservative"
+  zones_file: "data/zones.yaml"
+  api_timeout_seconds: 10.0
+
+task_scoring:
+  priority_weight: 100.0
+  recency_weight: 10.0
+  proximity_weight: 20.0
+  direction_bonus: 50.0
+
+logging:
+  level: "INFO"
+  log_dir: "logs"
+  rotating_file_enabled: true
+  max_file_mb: 10
+  backup_count: 5
+  json_output: true
+
+api:
+  host: "0.0.0.0"
+  port: 8080
+  static_ui_dir: "ui"
+  cors_enabled: true
+
+auth:
+  operator_token: "__OPERATOR_TOKEN__"
+  qa_token: "__QA_TOKEN__"
+  supervisor_token: "__SUPERVISOR_TOKEN__"
+
+alerts:
+  email_enabled: false
+  smtp_host: null
+  smtp_port: 587
+  smtp_username: null
+  smtp_password: null
+  supervisor_email: null
+  gpio_alert_enabled: false

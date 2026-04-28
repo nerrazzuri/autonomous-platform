@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,21 +22,36 @@ class FakeCycle:
         route_id: str = "PATROL_NORTH_LOOP",
         triggered_by: str = "schedule",
         status: str = "scheduled",
+        robot_id: str | None = None,
     ) -> None:
         self.cycle_id = cycle_id
         self.route_id = route_id
         self.triggered_by = triggered_by
         self.status = status
+        self.robot_id = robot_id
 
 
 class FakePatrolQueue:
     def __init__(self) -> None:
         self.next_cycle: FakeCycle | None = None
+        self.next_cycles: list[FakeCycle] = []
+        self.requested_robot_ids: list[str | None] = []
         self.active_calls: list[str] = []
         self.completed_calls: list[tuple[str, dict[str, object]]] = []
         self.failed_calls: list[tuple[str, str]] = []
 
-    async def get_next_cycle(self):
+    async def get_next_cycle(self, robot_id: str | None = None):
+        self.requested_robot_ids.append(robot_id)
+        if self.next_cycles:
+            for index, cycle in enumerate(self.next_cycles):
+                cycle_robot_id = getattr(cycle, "robot_id", None)
+                if cycle_robot_id is None or robot_id is None or cycle_robot_id == robot_id:
+                    return self.next_cycles.pop(index)
+            return None
+        if self.next_cycle is not None:
+            cycle_robot_id = getattr(self.next_cycle, "robot_id", None)
+            if cycle_robot_id is not None and robot_id is not None and cycle_robot_id != robot_id:
+                return None
         cycle = self.next_cycle
         self.next_cycle = None
         return cycle
@@ -174,6 +189,32 @@ class FakeEventBus:
         return list(self._published)
 
 
+class FakeRobotRegistry:
+    def __init__(self, *platforms) -> None:
+        self._platforms = {platform.robot_id: platform for platform in platforms}
+
+    def get(self, robot_id: str):
+        if robot_id not in self._platforms:
+            from shared.quadruped.robot_registry import RobotNotFoundError
+
+            raise RobotNotFoundError(robot_id)
+        return self._platforms[robot_id]
+
+    def all(self):
+        return list(self._platforms.values())
+
+
+def make_platform(robot_id: str, *, navigator=None, role: str | None = "patrol"):
+    return SimpleNamespace(
+        robot_id=robot_id,
+        navigator=navigator or FakeNavigator(),
+        config=SimpleNamespace(
+            role=role,
+            connection=SimpleNamespace(role=role),
+        ),
+    )
+
+
 def make_nav_result(
     *,
     success: bool,
@@ -210,7 +251,16 @@ def build_dispatcher(dispatcher_module, **kwargs):
         event_bus=kwargs.pop("event_bus", FakeEventBus()),
         poll_interval_seconds=kwargs.pop("poll_interval_seconds", 60.0),
         dock_route_id=kwargs.pop("dock_route_id", "PATROL_TO_DOCK"),
+        robot_registry=kwargs.pop("robot_registry", None),
     )
+
+
+async def wait_for_condition(predicate, *, timeout: float = 1.0) -> None:
+    async def _wait() -> None:
+        while not predicate():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_wait(), timeout=timeout)
 
 
 def test_invalid_poll_interval_rejected(dispatcher_module) -> None:
@@ -488,6 +538,7 @@ async def test_start_and_stop_are_idempotent(dispatcher_module) -> None:
     assert event_bus.subscriber_count(dispatcher_module.EventName.PATROL_RESUMED) == 1
     assert event_bus.subscriber_count(dispatcher_module.EventName.ESTOP_TRIGGERED) == 1
     assert event_bus.subscriber_count(dispatcher_module.EventName.QUADRUPED_ARRIVED_AT_WAYPOINT) == 1
+    assert event_bus.subscriber_count(dispatcher_module.EventName.QUADRUPED_IDLE) == 1
 
     await dispatcher.stop()
     await dispatcher.stop()
@@ -497,6 +548,7 @@ async def test_start_and_stop_are_idempotent(dispatcher_module) -> None:
     assert event_bus.subscriber_count(dispatcher_module.EventName.PATROL_RESUMED) == 0
     assert event_bus.subscriber_count(dispatcher_module.EventName.ESTOP_TRIGGERED) == 0
     assert event_bus.subscriber_count(dispatcher_module.EventName.QUADRUPED_ARRIVED_AT_WAYPOINT) == 0
+    assert event_bus.subscriber_count(dispatcher_module.EventName.QUADRUPED_IDLE) == 0
 
 
 @pytest.mark.asyncio
@@ -511,6 +563,261 @@ async def test_active_state_cleared_after_success(dispatcher_module) -> None:
     assert state.active_cycle_id is None
     assert state.active_route_id is None
     assert dispatcher.active_cycle_id() is None
+
+
+@pytest.mark.asyncio
+async def test_two_patrol_robots_can_run_two_independent_cycles(dispatcher_module) -> None:
+    queue = FakePatrolQueue()
+    queue.next_cycles = [
+        FakeCycle(cycle_id="cycle-1", route_id="PATROL_ALPHA", robot_id="patrol_01"),
+        FakeCycle(cycle_id="cycle-2", route_id="PATROL_BRAVO", robot_id="patrol_02"),
+    ]
+    patrol_01_nav = FakeNavigator()
+    patrol_01_nav.release_event = asyncio.Event()
+    patrol_01_nav.route_results["PATROL_ALPHA"] = make_nav_result(success=True, total_waypoints=2)
+    patrol_02_nav = FakeNavigator()
+    patrol_02_nav.release_event = asyncio.Event()
+    patrol_02_nav.route_results["PATROL_BRAVO"] = make_nav_result(success=True, total_waypoints=2)
+    event_bus = FakeEventBus()
+    registry = FakeRobotRegistry(
+        make_platform("patrol_01", navigator=patrol_01_nav),
+        make_platform("patrol_02", navigator=patrol_02_nav),
+    )
+    dispatcher = build_dispatcher(
+        dispatcher_module,
+        patrol_queue=queue,
+        navigator=FakeNavigator(),
+        event_bus=event_bus,
+        robot_registry=registry,
+    )
+
+    await dispatcher.start()
+    try:
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {"robot_id": "patrol_01"})
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {"robot_id": "patrol_02"})
+        await patrol_01_nav.started_event.wait()
+        await patrol_02_nav.started_event.wait()
+        await wait_for_condition(lambda: dispatcher._active_cycles == {"patrol_01": "cycle-1", "patrol_02": "cycle-2"})
+        patrol_01_nav.release_event.set()
+        patrol_02_nav.release_event.set()
+        await wait_for_condition(lambda: len(queue.completed_calls) == 2)
+    finally:
+        patrol_01_nav.release_event.set()
+        patrol_02_nav.release_event.set()
+        await dispatcher.stop()
+
+    assert patrol_01_nav.calls[0] == ("PATROL_ALPHA", "cycle-1")
+    assert patrol_02_nav.calls[0] == ("PATROL_BRAVO", "cycle-2")
+    assert queue.active_calls[:2] == ["cycle-1", "cycle-2"]
+    assert queue.completed_calls[:2] == [
+        ("cycle-1", {"waypoints_total": 2, "waypoints_observed": 0, "anomaly_ids": []}),
+        ("cycle-2", {"waypoints_total": 2, "waypoints_observed": 0, "anomaly_ids": []}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_robot_specific_route_affinity_is_respected(dispatcher_module) -> None:
+    queue = FakePatrolQueue()
+    queue.next_cycles = [
+        FakeCycle(cycle_id="cycle-a", route_id="ROUTE_A", robot_id="patrol_01"),
+        FakeCycle(cycle_id="cycle-b", route_id="ROUTE_B", robot_id="patrol_02"),
+        FakeCycle(cycle_id="cycle-c", route_id="ROUTE_C"),
+    ]
+    patrol_01_nav = FakeNavigator()
+    patrol_01_nav.route_results["ROUTE_A"] = make_nav_result(success=True, total_waypoints=1)
+    patrol_01_nav.route_results["ROUTE_C"] = make_nav_result(success=True, total_waypoints=1)
+    patrol_02_nav = FakeNavigator()
+    patrol_02_nav.route_results["ROUTE_B"] = make_nav_result(success=True, total_waypoints=1)
+    patrol_02_nav.route_results["ROUTE_C"] = make_nav_result(success=True, total_waypoints=1)
+    registry = FakeRobotRegistry(
+        make_platform("patrol_01", navigator=patrol_01_nav),
+        make_platform("patrol_02", navigator=patrol_02_nav),
+    )
+    dispatcher = build_dispatcher(dispatcher_module, patrol_queue=queue, robot_registry=registry)
+
+    assert await dispatcher._dispatch_for_robot("patrol_02") is True
+    assert patrol_02_nav.calls[0] == ("ROUTE_B", "cycle-b")
+
+    assert await dispatcher._dispatch_for_robot("patrol_01") is True
+    assert patrol_01_nav.calls[0] == ("ROUTE_A", "cycle-a")
+
+    queue.next_cycles = [FakeCycle(cycle_id="cycle-d", route_id="ROUTE_D")]
+    patrol_01_nav.route_results["ROUTE_D"] = make_nav_result(success=True, total_waypoints=1)
+    assert await dispatcher._dispatch_for_robot("patrol_01") is True
+    assert patrol_01_nav.calls[-2] == ("ROUTE_D", "cycle-d")
+
+
+@pytest.mark.asyncio
+async def test_completion_for_patrol_01_does_not_affect_patrol_02(dispatcher_module) -> None:
+    queue = FakePatrolQueue()
+    queue.next_cycles = [
+        FakeCycle(cycle_id="cycle-1", route_id="PATROL_ALPHA", robot_id="patrol_01"),
+        FakeCycle(cycle_id="cycle-2", route_id="PATROL_BRAVO", robot_id="patrol_02"),
+    ]
+    patrol_01_nav = FakeNavigator()
+    patrol_01_nav.release_event = asyncio.Event()
+    patrol_01_nav.route_results["PATROL_ALPHA"] = make_nav_result(success=True, total_waypoints=1)
+    patrol_02_nav = FakeNavigator()
+    patrol_02_nav.release_event = asyncio.Event()
+    patrol_02_nav.route_results["PATROL_BRAVO"] = make_nav_result(success=True, total_waypoints=1)
+    event_bus = FakeEventBus()
+    registry = FakeRobotRegistry(
+        make_platform("patrol_01", navigator=patrol_01_nav),
+        make_platform("patrol_02", navigator=patrol_02_nav),
+    )
+    dispatcher = build_dispatcher(dispatcher_module, patrol_queue=queue, event_bus=event_bus, robot_registry=registry)
+
+    await dispatcher.start()
+    try:
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {"robot_id": "patrol_01"})
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {"robot_id": "patrol_02"})
+        await patrol_01_nav.started_event.wait()
+        await patrol_02_nav.started_event.wait()
+        await wait_for_condition(lambda: dispatcher._active_cycles == {"patrol_01": "cycle-1", "patrol_02": "cycle-2"})
+
+        patrol_01_nav.release_event.set()
+        await wait_for_condition(lambda: "patrol_01" not in dispatcher._active_cycles)
+        assert dispatcher._active_cycles["patrol_02"] == "cycle-2"
+    finally:
+        patrol_02_nav.release_event.set()
+        await dispatcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_failure_for_patrol_02_does_not_affect_patrol_01(dispatcher_module) -> None:
+    queue = FakePatrolQueue()
+    queue.next_cycles = [
+        FakeCycle(cycle_id="cycle-1", route_id="PATROL_ALPHA", robot_id="patrol_01"),
+        FakeCycle(cycle_id="cycle-2", route_id="PATROL_BRAVO", robot_id="patrol_02"),
+    ]
+    patrol_01_nav = FakeNavigator()
+    patrol_01_nav.release_event = asyncio.Event()
+    patrol_01_nav.route_results["PATROL_ALPHA"] = make_nav_result(success=True, total_waypoints=1)
+    patrol_02_nav = FakeNavigator(result=make_nav_result(success=False, message="blocked"))
+    patrol_02_nav.route_results["PATROL_BRAVO"] = make_nav_result(success=False, message="blocked")
+    event_bus = FakeEventBus()
+    registry = FakeRobotRegistry(
+        make_platform("patrol_01", navigator=patrol_01_nav),
+        make_platform("patrol_02", navigator=patrol_02_nav),
+    )
+    dispatcher = build_dispatcher(dispatcher_module, patrol_queue=queue, event_bus=event_bus, robot_registry=registry)
+
+    await dispatcher.start()
+    try:
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {"robot_id": "patrol_01"})
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {"robot_id": "patrol_02"})
+        await patrol_01_nav.started_event.wait()
+        await patrol_02_nav.started_event.wait()
+        await wait_for_condition(lambda: dispatcher._active_cycles.get("patrol_01") == "cycle-1")
+        await wait_for_condition(lambda: "patrol_02" not in dispatcher._active_cycles)
+        assert dispatcher._active_cycles["patrol_01"] == "cycle-1"
+        assert queue.failed_calls == [("cycle-2", "blocked")]
+    finally:
+        patrol_01_nav.release_event.set()
+        await dispatcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_unknown_robot_id_event_is_ignored_safely(dispatcher_module) -> None:
+    queue = FakePatrolQueue()
+    queue.next_cycle = FakeCycle(cycle_id="cycle-1", robot_id="patrol_01")
+    patrol_01_nav = FakeNavigator()
+    patrol_01_nav.release_event = asyncio.Event()
+    patrol_01_nav.route_results["PATROL_NORTH_LOOP"] = make_nav_result(success=True, total_waypoints=1)
+    event_bus = FakeEventBus()
+    registry = FakeRobotRegistry(make_platform("patrol_01", navigator=patrol_01_nav))
+    dispatcher = build_dispatcher(dispatcher_module, patrol_queue=queue, event_bus=event_bus, robot_registry=registry)
+
+    await dispatcher.start()
+    try:
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {"robot_id": "patrol_01"})
+        await patrol_01_nav.started_event.wait()
+        await wait_for_condition(lambda: dispatcher._active_cycles.get("patrol_01") == "cycle-1")
+
+        await dispatcher._handle_estop_triggered(SimpleNamespace(payload={"reason": "pressed", "robot_id": "patrol_999"}))
+
+        assert dispatcher._active_cycles["patrol_01"] == "cycle-1"
+        assert patrol_01_nav.cancel_calls == []
+    finally:
+        patrol_01_nav.release_event.set()
+        await dispatcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_legacy_no_robot_id_idle_event_still_works(dispatcher_module) -> None:
+    queue = FakePatrolQueue()
+    queue.next_cycle = FakeCycle(cycle_id="cycle-1")
+    navigator = FakeNavigator()
+    navigator.release_event = asyncio.Event()
+    event_bus = FakeEventBus()
+    dispatcher = build_dispatcher(dispatcher_module, patrol_queue=queue, navigator=navigator, event_bus=event_bus)
+
+    await dispatcher.start()
+    try:
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {})
+        await navigator.started_event.wait()
+        await wait_for_condition(lambda: dispatcher._active_cycles.get("default") == "cycle-1")
+    finally:
+        navigator.release_event.set()
+        await dispatcher.stop()
+
+    assert navigator.calls[0] == ("PATROL_NORTH_LOOP", "cycle-1")
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_uses_per_robot_navigator(dispatcher_module) -> None:
+    queue = FakePatrolQueue()
+    queue.next_cycle = FakeCycle(cycle_id="cycle-2", route_id="PATROL_BRAVO", robot_id="patrol_02")
+    legacy_navigator = FakeNavigator()
+    patrol_02_nav = FakeNavigator()
+    patrol_02_nav.release_event = asyncio.Event()
+    patrol_02_nav.route_results["PATROL_BRAVO"] = make_nav_result(success=True, total_waypoints=1)
+    event_bus = FakeEventBus()
+    registry = FakeRobotRegistry(make_platform("patrol_02", navigator=patrol_02_nav))
+    dispatcher = build_dispatcher(
+        dispatcher_module,
+        patrol_queue=queue,
+        navigator=legacy_navigator,
+        event_bus=event_bus,
+        robot_registry=registry,
+    )
+
+    await dispatcher.start()
+    try:
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {"robot_id": "patrol_02"})
+        await patrol_02_nav.started_event.wait()
+    finally:
+        patrol_02_nav.release_event.set()
+        await dispatcher.stop()
+
+    assert patrol_02_nav.calls[0] == ("PATROL_BRAVO", "cycle-2")
+    assert legacy_navigator.calls == []
+
+
+@pytest.mark.asyncio
+async def test_logistics_robot_is_not_selected_for_patrol(dispatcher_module) -> None:
+    queue = FakePatrolQueue()
+    queue.next_cycle = FakeCycle(cycle_id="cycle-1", robot_id="patrol_01")
+    logistics_nav = FakeNavigator()
+    patrol_nav = FakeNavigator()
+    patrol_nav.release_event = asyncio.Event()
+    event_bus = FakeEventBus()
+    registry = FakeRobotRegistry(
+        make_platform("logistics_01", navigator=logistics_nav, role="logistics"),
+        make_platform("patrol_01", navigator=patrol_nav, role="patrol"),
+    )
+    dispatcher = build_dispatcher(dispatcher_module, patrol_queue=queue, event_bus=event_bus, robot_registry=registry)
+
+    await dispatcher.start()
+    try:
+        await event_bus.publish(dispatcher_module.EventName.QUADRUPED_IDLE, {})
+        await patrol_nav.started_event.wait()
+    finally:
+        patrol_nav.release_event.set()
+        await dispatcher.stop()
+
+    assert patrol_nav.calls[0] == ("PATROL_NORTH_LOOP", "cycle-1")
+    assert logistics_nav.calls == []
 
 
 def test_global_get_patrol_dispatcher_returns_dispatcher(dispatcher_module) -> None:

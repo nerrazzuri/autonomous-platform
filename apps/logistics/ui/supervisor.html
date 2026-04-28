@@ -142,6 +142,23 @@
       transition: background-color var(--transition), transform var(--transition);
     }
 
+    .status-pill-link {
+      color: var(--text);
+      text-decoration: none;
+      transition:
+        transform var(--transition),
+        border-color var(--transition),
+        background-color var(--transition);
+    }
+
+    .status-pill-link:hover,
+    .status-pill-link:focus-visible {
+      transform: translateY(-1px);
+      border-color: rgba(126, 178, 235, 0.4);
+      background: rgba(48, 82, 126, 0.26);
+      outline: none;
+    }
+
     .status-pill[data-tone="success"] .status-dot {
       background: var(--success);
       transform: scale(1.08);
@@ -253,6 +270,197 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 18px;
+    }
+
+    .fleet-panel {
+      padding: 22px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .fleet-toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .fleet-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .fleet-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 14px;
+    }
+
+    .fleet-card {
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.035);
+      display: grid;
+      gap: 14px;
+      transition: border-color var(--transition), transform var(--transition), background-color var(--transition);
+    }
+
+    .fleet-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(126, 178, 235, 0.34);
+    }
+
+    .fleet-card.is-selected {
+      background: rgba(82, 138, 206, 0.14);
+      border-color: rgba(126, 178, 235, 0.5);
+      box-shadow: inset 0 0 0 1px rgba(126, 178, 235, 0.12);
+    }
+
+    .fleet-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .fleet-name {
+      display: grid;
+      gap: 4px;
+    }
+
+    .fleet-id {
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .fleet-display {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .fleet-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .fleet-field {
+      padding: 12px 13px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      display: grid;
+      gap: 4px;
+    }
+
+    .fleet-label {
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .fleet-value {
+      font-size: 0.94rem;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .fleet-card-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .fleet-card-actions button {
+      min-height: 54px;
+      padding: 12px 14px;
+      font-size: 0.92rem;
+    }
+
+    .detail-card {
+      padding: 22px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .detail-item {
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      display: grid;
+      gap: 6px;
+    }
+
+    .detail-label {
+      color: var(--muted);
+      font-size: 0.76rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .detail-value {
+      font-size: 1rem;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .map-stack {
+      position: relative;
+      min-height: 320px;
+    }
+
+    .fleet-map-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .fleet-map-marker {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      display: grid;
+      gap: 4px;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .fleet-map-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      background: var(--accent);
+      border: 2px solid rgba(255, 255, 255, 0.94);
+      box-shadow: 0 0 0 7px rgba(126, 178, 235, 0.18);
+    }
+
+    .fleet-map-marker.is-selected .fleet-map-dot {
+      background: var(--warning);
+      box-shadow: 0 0 0 8px rgba(245, 182, 72, 0.18);
+    }
+
+    .fleet-map-caption {
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(9, 15, 25, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text);
+      white-space: nowrap;
     }
 
     .card {
@@ -539,6 +747,10 @@
         grid-template-columns: 1fr;
       }
 
+      .detail-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
       .events-list {
         max-height: 420px;
       }
@@ -560,6 +772,12 @@
       }
 
       .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .fleet-fields,
+      .fleet-card-actions,
+      .detail-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -588,6 +806,9 @@
           <span class="status-dot" aria-hidden="true"></span>
           <span id="auth-text">Token missing</span>
         </div>
+        <a class="status-pill status-pill-link" id="provision-link" href="/ui/provision.html">
+          Provision Robots
+        </a>
       </div>
     </section>
 
@@ -610,6 +831,28 @@
           <span class="button-help">Reload REST data now</span>
         </button>
       </div>
+    </section>
+
+    <section class="panel fleet-panel">
+      <div class="fleet-toolbar">
+        <div>
+          <div class="card-kicker">Fleet</div>
+          <h2 class="card-title">Logistics Robot Fleet</h2>
+        </div>
+        <div class="fleet-actions">
+          <button type="button" class="btn-muted" id="fleet-show-all-button">Show All</button>
+        </div>
+      </div>
+      <div class="fleet-grid" id="fleet-grid"></div>
+      <article class="detail-card">
+        <div class="card-head">
+          <div>
+            <div class="card-kicker">Selected Robot</div>
+            <h2 class="card-title" id="selected-robot-title">No robot selected</h2>
+          </div>
+        </div>
+        <div class="detail-grid" id="selected-robot-details"></div>
+      </article>
     </section>
 
     <section class="summary-grid">
@@ -704,7 +947,10 @@
               <h2 class="card-title">Quadruped Floor Map</h2>
             </div>
           </div>
-          <div class="floormap-host" id="floormap-container"></div>
+          <div class="map-stack">
+            <div class="floormap-host" id="floormap-container"></div>
+            <div class="fleet-map-layer" id="fleet-map-layer" aria-hidden="true"></div>
+          </div>
         </article>
 
         <article class="panel events-panel">
@@ -737,6 +983,9 @@
         lastAlertSeverity: "info",
         lastAlertMessage: "No active alert.",
         floorMap: null,
+        fleetRefreshTimer: null,
+        selectedRobotId: null,
+        fleet: [],
         quadruped: {
           mode: null,
           battery_pct: null,
@@ -768,17 +1017,23 @@
         connectionText: document.getElementById("connection-text"),
         authPill: document.getElementById("auth-pill"),
         authText: document.getElementById("auth-text"),
+        provisionLink: document.getElementById("provision-link"),
         headlineNote: document.getElementById("headline-note"),
         subheadlineNote: document.getElementById("subheadline-note"),
         estopButton: document.getElementById("estop-button"),
         releaseButton: document.getElementById("release-button"),
         refreshButton: document.getElementById("refresh-button"),
+        fleetShowAllButton: document.getElementById("fleet-show-all-button"),
+        fleetGrid: document.getElementById("fleet-grid"),
+        selectedRobotTitle: document.getElementById("selected-robot-title"),
+        selectedRobotDetails: document.getElementById("selected-robot-details"),
         quadrupedMetrics: document.getElementById("quadruped-metrics"),
         batteryMetrics: document.getElementById("battery-metrics"),
         queueMetrics: document.getElementById("queue-metrics"),
         taskTableBody: document.getElementById("task-table-body"),
         routeTableBody: document.getElementById("route-table-body"),
         floorMapContainer: document.getElementById("floormap-container"),
+        fleetMapLayer: document.getElementById("fleet-map-layer"),
         eventList: document.getElementById("event-list")
       };
 
@@ -816,6 +1071,7 @@
         bindEvents();
         bootstrapFromQuery();
         initFloorMap();
+        updateProvisionLink();
         renderAll();
 
         if (!state.hasToken) {
@@ -841,23 +1097,46 @@
 
         refreshAllData();
         connectWebSocket();
+        state.fleetRefreshTimer = window.setInterval(refreshAllData, 5000);
       }
 
       function bindEvents() {
         elements.refreshButton.addEventListener("click", refreshAllData);
+        elements.fleetShowAllButton.addEventListener("click", function () {
+          state.selectedRobotId = null;
+          syncSelectedRobotToQuadruped();
+          renderFleet();
+          renderEvents();
+          renderQuadruped();
+          renderBattery();
+        });
         elements.estopButton.addEventListener("click", function () {
           triggerControl("/estop", "Emergency stop triggered.", "Emergency stop failed.");
         });
         elements.releaseButton.addEventListener("click", function () {
           triggerControl("/estop/release", "Emergency stop released.", "Emergency stop release failed.");
         });
-        window.addEventListener("beforeunload", teardownSocket);
+        window.addEventListener("beforeunload", function () {
+          if (state.fleetRefreshTimer) {
+            window.clearInterval(state.fleetRefreshTimer);
+            state.fleetRefreshTimer = null;
+          }
+          teardownSocket();
+        });
       }
 
       function bootstrapFromQuery() {
         const params = new URLSearchParams(window.location.search);
         state.token = (params.get("token") || "").trim();
         state.hasToken = Boolean(state.token);
+      }
+
+      function updateProvisionLink() {
+        const url = new URL("/ui/provision.html", window.location.origin);
+        if (state.hasToken) {
+          url.searchParams.set("token", state.token);
+        }
+        elements.provisionLink.href = url.pathname + url.search;
       }
 
       async function refreshAllData() {
@@ -869,6 +1148,7 @@
         updateControls();
 
         const results = await Promise.allSettled([
+          refreshRobots(),
           refreshQuadrupedStatus(),
           refreshQueueStatus(),
           refreshTasks(),
@@ -901,6 +1181,17 @@
         const response = await authorizedFetch("/quadruped/status");
         const payload = await response.json();
         state.quadruped = Object.assign({}, state.quadruped, payload);
+        syncSelectedRobotToQuadruped();
+        renderQuadruped();
+        renderBattery();
+      }
+
+      async function refreshRobots() {
+        const response = await authorizedFetch("/robots");
+        state.fleet = await response.json();
+        preserveSelectedRobot();
+        syncSelectedRobotToQuadruped();
+        renderFleet();
         renderQuadruped();
         renderBattery();
       }
@@ -969,6 +1260,42 @@
             state.releasePending = false;
           }
           updateControls();
+        }
+      }
+
+      async function triggerRobotControl(robotId, action) {
+        if (!robotId) {
+          return;
+        }
+
+        const encodedRobotId = encodeURIComponent(robotId);
+        const path = action === "release"
+          ? "/robots/" + encodedRobotId + "/estop/release"
+          : "/robots/" + encodedRobotId + "/estop";
+        const successMessage = action === "release"
+          ? "Release requested for " + robotId + "."
+          : "Emergency stop requested for " + robotId + ".";
+        const failureMessage = action === "release"
+          ? "Robot release failed for " + robotId + "."
+          : "Robot emergency stop failed for " + robotId + ".";
+
+        try {
+          const response = await authorizedFetch(path, { method: "POST" });
+          const payload = await response.json();
+          addEvent({
+            severity: "success",
+            message: payload.message || successMessage,
+            module: "rest",
+            robotId: robotId
+          });
+          await refreshRobots();
+        } catch (error) {
+          addEvent({
+            severity: "critical",
+            message: failureMessage + " " + error.message,
+            module: "rest",
+            robotId: robotId
+          });
         }
       }
 
@@ -1087,18 +1414,29 @@
         }
 
         const payload = message.payload || {};
+        const robotId = payload.robot_id || null;
         switch (message.event_name) {
           case "quadruped.telemetry":
             const previousQuadruped = Object.assign({}, state.quadruped);
             state.quadruped = Object.assign({}, state.quadruped, payload);
+            mergeFleetRobotUpdate(robotId, {
+              connected: payload.connection_ok,
+              battery_pct: payload.battery_pct,
+              mode: payload.control_mode,
+              position: normalizePositionObject(payload.position),
+              active_task_id: payload.active_task_id
+            });
+            syncSelectedRobotToQuadruped();
             renderQuadruped();
             renderBattery();
+            renderFleet();
             if (telemetryChanged(previousQuadruped, state.quadruped)) {
               addEvent({
                 severity: payload.connection_ok === false ? "warning" : "info",
                 message: telemetryMessage(previousQuadruped, state.quadruped),
                 module: message.source || "ws",
-                timestamp: message.timestamp
+                timestamp: message.timestamp,
+                robotId: robotId
               });
             }
             break;
@@ -1120,7 +1458,8 @@
               severity: eventSeverity(message.event_name, payload),
               message: taskEventMessage(message.event_name, payload, message.task_id),
               module: message.source || "ws",
-              timestamp: message.timestamp
+              timestamp: message.timestamp,
+              robotId: robotId
             });
             break;
           case "system.alert":
@@ -1137,7 +1476,8 @@
               severity: eventSeverity(message.event_name, payload),
               message: eventMessage(message.event_name, payload),
               module: message.source || "ws",
-              timestamp: message.timestamp
+              timestamp: message.timestamp,
+              robotId: robotId
             });
             break;
           default:
@@ -1146,6 +1486,12 @@
       }
 
       function applyOperationalEvent(eventName, payload) {
+        mergeFleetRobotUpdate(payload.robot_id || null, {
+          connected: payload.connection_ok,
+          battery_pct: payload.battery_pct,
+          mode: payload.control_mode,
+          position: normalizePositionObject(payload.position)
+        });
         if (eventName === "battery.warn" || eventName === "battery.critical" || eventName === "battery.recharged") {
           if (payload.battery_pct != null) {
             state.quadruped.battery_pct = payload.battery_pct;
@@ -1169,6 +1515,7 @@
         }
 
         renderBattery();
+        renderFleet();
       }
 
       function mergeTaskEvent(payload, taskId) {
@@ -1197,7 +1544,141 @@
         }
       }
 
+      function preserveSelectedRobot() {
+        if (state.selectedRobotId && !findRobot(state.selectedRobotId)) {
+          state.selectedRobotId = null;
+        }
+        if (!state.selectedRobotId && state.fleet.length === 1) {
+          state.selectedRobotId = state.fleet[0].robot_id;
+        }
+      }
+
+      function findRobot(robotId) {
+        return state.fleet.find(function (robot) {
+          return robot.robot_id === robotId;
+        }) || null;
+      }
+
+      function getFocusedRobot() {
+        return findRobot(state.selectedRobotId) || state.fleet[0] || null;
+      }
+
+      function syncSelectedRobotToQuadruped() {
+        const focusedRobot = getFocusedRobot();
+        if (!focusedRobot) {
+          return;
+        }
+        state.quadruped.mode = focusedRobot.mode == null ? state.quadruped.mode : focusedRobot.mode;
+        state.quadruped.battery_pct = focusedRobot.battery_pct == null ? state.quadruped.battery_pct : focusedRobot.battery_pct;
+        state.quadruped.position = focusedRobot.position == null
+          ? state.quadruped.position
+          : [focusedRobot.position.x, focusedRobot.position.y, focusedRobot.position.z == null ? 0 : focusedRobot.position.z];
+        state.quadruped.connection_ok = focusedRobot.connected == null ? state.quadruped.connection_ok : focusedRobot.connected;
+        state.quadruped.active_task_id = focusedRobot.active_task_id == null ? state.quadruped.active_task_id : focusedRobot.active_task_id;
+        state.quadruped.control_mode = focusedRobot.mode == null ? state.quadruped.control_mode : focusedRobot.mode;
+      }
+
+      function renderFleet() {
+        renderFleetCards();
+        renderSelectedRobotDetails();
+        renderFleetMapMarkers();
+      }
+
+      function renderFleetCards() {
+        if (!state.fleet.length) {
+          elements.fleetGrid.innerHTML = "<div class=\"empty-note\">No logistics robots are currently registered.</div>";
+          return;
+        }
+
+        elements.fleetGrid.innerHTML = state.fleet.map(function (robot) {
+          const selectedClass = robot.robot_id === state.selectedRobotId ? " is-selected" : "";
+          return "<article class=\"fleet-card" + selectedClass + "\" data-robot-card=\"true\" data-robot-id=\"" + escapeHtml(robot.robot_id || "") + "\">"
+            + "<div class=\"fleet-card-head\">"
+            + "<div class=\"fleet-name\">"
+            + "<div class=\"fleet-id\">" + escapeHtml(robot.robot_id || "unknown") + "</div>"
+            + "<div class=\"fleet-display\">" + escapeHtml(robot.display_name || "Unnamed robot") + "</div>"
+            + "</div>"
+            + statusBadge(robot.connected === true ? "online" : robot.connected === false ? "offline" : "unknown")
+            + "</div>"
+            + "<div class=\"fleet-fields\">"
+            + fleetField("Battery", robot.battery_pct == null ? "-" : robot.battery_pct + "%")
+            + fleetField("Mode", robot.mode == null ? "unknown" : String(robot.mode))
+            + fleetField("Task", robot.active_task_id || "idle")
+            + fleetField("Position", formatRobotPosition(robot.position))
+            + "</div>"
+            + "<div class=\"fleet-card-actions\">"
+            + "<button type=\"button\" class=\"btn-muted\" data-select-robot=\"" + escapeHtml(robot.robot_id || "") + "\">Select</button>"
+            + "<button type=\"button\" class=\"btn-danger\" data-robot-estop=\"" + escapeHtml(robot.robot_id || "") + "\">E-Stop</button>"
+            + "<button type=\"button\" class=\"btn-primary\" data-robot-release=\"" + escapeHtml(robot.robot_id || "") + "\">Release</button>"
+            + "</div>"
+            + "</article>";
+        }).join("");
+
+        Array.from(elements.fleetGrid.querySelectorAll("[data-select-robot]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            state.selectedRobotId = button.getAttribute("data-select-robot") || null;
+            syncSelectedRobotToQuadruped();
+            renderFleet();
+            renderEvents();
+            renderQuadruped();
+            renderBattery();
+          });
+        });
+
+        Array.from(elements.fleetGrid.querySelectorAll("[data-robot-estop]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            triggerRobotControl(button.getAttribute("data-robot-estop"), "estop");
+          });
+        });
+
+        Array.from(elements.fleetGrid.querySelectorAll("[data-robot-release]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            triggerRobotControl(button.getAttribute("data-robot-release"), "release");
+          });
+        });
+      }
+
+      function renderSelectedRobotDetails() {
+        const robot = getFocusedRobot();
+        if (!robot) {
+          elements.selectedRobotTitle.textContent = "No robot selected";
+          elements.selectedRobotDetails.innerHTML = "<div class=\"empty-note\">Choose a robot from the fleet panel to focus its details and events.</div>";
+          return;
+        }
+
+        elements.selectedRobotTitle.textContent = (robot.display_name || robot.robot_id || "Robot") + " · " + (robot.robot_id || "unknown");
+        elements.selectedRobotDetails.innerHTML = [
+          detailItem("Connection", robot.connected === true ? "Online" : robot.connected === false ? "Offline" : "unknown"),
+          detailItem("Battery", robot.battery_pct == null ? "-" : robot.battery_pct + "%"),
+          detailItem("Mode", robot.mode == null ? "unknown" : String(robot.mode)),
+          detailItem("Active Task", robot.active_task_id || "idle"),
+          detailItem("Position", formatRobotPosition(robot.position)),
+          detailItem("Display Name", robot.display_name || "-"),
+          detailItem("Role", robot.role || "logistics"),
+          detailItem("Selection", state.selectedRobotId ? "Filtered events" : "Showing all events")
+        ].join("");
+      }
+
+      function fleetField(label, value) {
+        return "<div class=\"fleet-field\"><div class=\"fleet-label\">" + escapeHtml(label) + "</div><div class=\"fleet-value\">" + escapeHtml(value) + "</div></div>";
+      }
+
+      function detailItem(label, value) {
+        return "<div class=\"detail-item\"><div class=\"detail-label\">" + escapeHtml(label) + "</div><div class=\"detail-value\">" + escapeHtml(value) + "</div></div>";
+      }
+
+      function formatRobotPosition(position) {
+        if (!position || position.x == null || position.y == null) {
+          return "unknown";
+        }
+        const zValue = position.z == null ? 0 : position.z;
+        return [position.x, position.y, zValue].map(function (item) {
+          return Number(item).toFixed(2);
+        }).join(", ");
+      }
+
       function renderAll() {
+        renderFleet();
         renderQuadruped();
         renderBattery();
         renderQueue();
@@ -1279,17 +1760,24 @@
       }
 
       function renderEvents() {
-        if (state.events.length === 0) {
+        const visibleEvents = state.selectedRobotId
+          ? state.events.filter(function (entry) {
+              return !entry.robotId || entry.robotId === state.selectedRobotId;
+            })
+          : state.events;
+
+        if (visibleEvents.length === 0) {
           elements.eventList.innerHTML = "<div class=\"empty-note\">Live alerts and operational events will appear here.</div>";
           return;
         }
 
-        elements.eventList.innerHTML = state.events.map(function (entry) {
+        elements.eventList.innerHTML = visibleEvents.map(function (entry) {
           const tone = entry.severity === "critical" ? "critical" : entry.severity;
           return "<article class=\"event-item\" data-tone=\"" + tone + "\">"
             + "<div class=\"event-meta\">"
             + "<span class=\"severity-pill " + tone + "\">" + escapeHtml(entry.severity) + "</span>"
             + "<span class=\"module-pill\">" + escapeHtml(entry.module || "system") + "</span>"
+            + (entry.robotId ? "<span class=\"module-pill\">" + escapeHtml(entry.robotId) + "</span>" : "")
             + "<span class=\"event-time\">" + escapeHtml(entry.timestampLabel) + "</span>"
             + "</div>"
             + "<div class=\"event-message\">" + escapeHtml(entry.message) + "</div>"
@@ -1318,13 +1806,47 @@
           return;
         }
 
-        const position = state.quadruped.position;
+        const focusedRobot = getFocusedRobot();
+        const position = focusedRobot && focusedRobot.position
+          ? [focusedRobot.position.x, focusedRobot.position.y, focusedRobot.position.z == null ? 0 : focusedRobot.position.z]
+          : state.quadruped.position;
         if (Array.isArray(position) && position.length >= 2) {
           state.floorMap.updatePosition(position);
           return;
         }
 
         state.floorMap.clear();
+      }
+
+      function renderFleetMapMarkers() {
+        if (!elements.fleetMapLayer) {
+          return;
+        }
+
+        const robotsWithPosition = state.fleet.filter(function (robot) {
+          return robot.position && robot.position.x != null && robot.position.y != null;
+        });
+
+        if (!robotsWithPosition.length) {
+          elements.fleetMapLayer.innerHTML = "";
+          return;
+        }
+
+        const bounds = {
+          minX: -10,
+          maxX: 10,
+          minY: -10,
+          maxY: 10
+        };
+
+        elements.fleetMapLayer.innerHTML = robotsWithPosition.map(function (robot) {
+          const marker = markerPositionStyle(robot.position, bounds);
+          const selectedClass = robot.robot_id === state.selectedRobotId ? " is-selected" : "";
+          return "<div class=\"fleet-map-marker" + selectedClass + "\" style=\"left:" + marker.left + "%;top:" + marker.top + "%;\">"
+            + "<span class=\"fleet-map-dot\"></span>"
+            + "<span class=\"fleet-map-caption\">" + escapeHtml(robot.robot_id || "robot") + "</span>"
+            + "</div>";
+        }).join("");
       }
 
       function updateControls() {
@@ -1447,7 +1969,8 @@
           severity: severity,
           message: entry.message || "Event received.",
           module: entry.module || "system",
-          timestampLabel: timestampLabel
+          timestampLabel: timestampLabel,
+          robotId: entry.robotId || null
         });
 
         state.events = state.events.slice(0, 18);
@@ -1455,6 +1978,56 @@
         state.lastAlertMessage = entry.message || state.lastAlertMessage;
         renderBattery();
         renderEvents();
+      }
+
+      function mergeFleetRobotUpdate(robotId, nextFields) {
+        if (!robotId) {
+          return;
+        }
+
+        const robot = findRobot(robotId);
+        if (!robot) {
+          return;
+        }
+
+        Object.keys(nextFields || {}).forEach(function (key) {
+          if (nextFields[key] !== undefined) {
+            robot[key] = nextFields[key];
+          }
+        });
+      }
+
+      function normalizePositionObject(position) {
+        if (Array.isArray(position) && position.length >= 2) {
+          return {
+            x: Number(position[0]),
+            y: Number(position[1]),
+            z: position.length > 2 ? Number(position[2]) : 0
+          };
+        }
+        if (position && typeof position === "object" && position.x != null && position.y != null) {
+          return {
+            x: Number(position.x),
+            y: Number(position.y),
+            z: position.z == null ? 0 : Number(position.z)
+          };
+        }
+        return null;
+      }
+
+      function markerPositionStyle(position, bounds) {
+        const xValue = Number(position.x);
+        const yValue = Number(position.y);
+        const xRatio = clampRatio((xValue - bounds.minX) / (bounds.maxX - bounds.minX));
+        const yRatio = clampRatio((yValue - bounds.minY) / (bounds.maxY - bounds.minY));
+        return {
+          left: xRatio * 100,
+          top: (1 - yRatio) * 100
+        };
+      }
+
+      function clampRatio(value) {
+        return Math.min(Math.max(value, 0), 1);
       }
 
       function normalizeSeverity(value) {

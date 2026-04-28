@@ -5,16 +5,20 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
+from shared.quadruped.robot_registry import RobotNotFoundError, RobotRegistry, get_robot_registry
 from shared.quadruped.state_monitor import StateMonitor, get_state_monitor
 from apps.logistics.tasks.dispatcher import Dispatcher, get_dispatcher
 from apps.logistics.tasks.queue import TaskQueue, get_task_queue
 
 
 logger = get_logger(__name__)
+_LEGACY_ROBOT_ID = "default"
+_LOGISTICS_ROLE = "logistics"
 
 
 class BatteryManagerError(Exception):
@@ -41,6 +45,7 @@ class BatteryManager:
         state_monitor: StateMonitor | None = None,
         charging_poll_seconds: int | None = None,
         dock_station_id: str = "DOCK",
+        robot_registry: RobotRegistry | None = None,
     ) -> None:
         config = get_config()
         resolved_poll_seconds = (
@@ -54,15 +59,17 @@ class BatteryManager:
         self._task_queue = task_queue or get_task_queue()
         self._dispatcher = dispatcher or get_dispatcher()
         self._state_monitor = state_monitor or get_state_monitor()
+        self._robot_registry = robot_registry or get_robot_registry()
         self._charging_poll_seconds = resolved_poll_seconds
         self._dock_station_id = dock_station_id.strip()
 
         self._running = False
-        self._charging_mode = False
-        self._dock_task_id: str | None = None
-        self._dock_task_active = False
-        self._last_battery_pct: int | None = None
-        self._last_result: str | None = None
+        self._charging_mode: dict[str, bool] = {}
+        self._dock_task_id: dict[str, str] = {}
+        self._dock_task_active: dict[str, bool] = {}
+        self._dispatcher_paused: dict[str, bool] = {}
+        self._last_battery_pct: dict[str, int | None] = {}
+        self._last_result: dict[str, str | None] = {}
         self._last_error: str | None = None
 
         self._subscription_ids: list[str] = []
@@ -84,95 +91,131 @@ class BatteryManager:
 
     async def get_state(self) -> BatteryManagerState:
         async with self._lock:
+            robot_id = self._legacy_state_robot_id()
             return BatteryManagerState(
                 running=self._running,
-                charging_mode=self._charging_mode,
-                dock_task_id=self._dock_task_id,
-                dock_task_active=self._dock_task_active,
-                last_battery_pct=self._last_battery_pct,
-                last_result=self._last_result,
+                charging_mode=self._charging_mode.get(robot_id, False),
+                dock_task_id=self._dock_task_id.get(robot_id),
+                dock_task_active=self._dock_task_active.get(robot_id, False),
+                last_battery_pct=self._last_battery_pct.get(robot_id),
+                last_result=self._last_result.get(robot_id),
             )
 
     def is_running(self) -> bool:
         return self._running
 
     def in_charging_mode(self) -> bool:
-        return self._charging_mode
+        return self._charging_mode.get(self._legacy_state_robot_id(), False)
 
     def last_error(self) -> str | None:
         return self._last_error
 
-    async def handle_battery_warn(self, battery_pct: int | None = None) -> None:
+    async def handle_battery_warn(self, battery_pct: int | None = None, *, robot_id: str | None = None) -> None:
+        resolved_robot_id = self._resolve_target_robot_id(robot_id)
+        if resolved_robot_id is None:
+            return
         async with self._lock:
-            self._last_battery_pct = battery_pct
-            self._last_result = "battery warn handled"
-        logger.warning("Battery warning received", extra={"battery_pct": battery_pct})
+            self._last_battery_pct[resolved_robot_id] = battery_pct
+            self._last_result[resolved_robot_id] = "battery warn handled"
+        logger.warning("Battery warning received", extra={"battery_pct": battery_pct, "robot_id": resolved_robot_id})
 
-    async def handle_battery_critical(self, battery_pct: int | None = None) -> None:
+    async def handle_battery_critical(self, battery_pct: int | None = None, *, robot_id: str | None = None) -> None:
+        resolved_robot_id = self._resolve_target_robot_id(robot_id)
+        if resolved_robot_id is None:
+            return
+
         async with self._lock:
-            self._last_battery_pct = battery_pct
-            if self._charging_mode:
-                self._last_result = "already in charging mode"
-                logger.warning("Battery critical received while already in charging mode")
+            self._last_battery_pct[resolved_robot_id] = battery_pct
+            if self._charging_mode.get(resolved_robot_id, False):
+                self._last_result[resolved_robot_id] = "already in charging mode"
+                logger.warning(
+                    "Battery critical received while already in charging mode",
+                    extra={"robot_id": resolved_robot_id},
+                )
                 return
-            self._charging_mode = True
-            self._dock_task_active = False
-            self._last_result = "entering charging mode"
+            self._charging_mode[resolved_robot_id] = True
+            self._dock_task_active[resolved_robot_id] = False
+            self._dispatcher_paused[resolved_robot_id] = False
+            self._last_result[resolved_robot_id] = "entering charging mode"
 
-        logger.warning("Battery critical received; entering charging mode", extra={"battery_pct": battery_pct})
+        logger.warning(
+            "Battery critical received; entering charging mode",
+            extra={"battery_pct": battery_pct, "robot_id": resolved_robot_id},
+        )
+
+        should_pause_dispatcher = self._should_pause_dispatcher(resolved_robot_id)
+        if should_pause_dispatcher:
+            try:
+                await self._dispatcher.pause(reason="critical battery")
+                async with self._lock:
+                    self._dispatcher_paused[resolved_robot_id] = True
+                logger.info("Dispatcher paused for critical battery dock task")
+            except Exception as exc:
+                self._record_error(f"Failed to pause dispatcher: {exc}")
+                raise BatteryManagerError(f"Failed to pause dispatcher: {exc}") from exc
 
         try:
-            await self._dispatcher.pause(reason="critical battery")
-            logger.info("Dispatcher paused for critical battery dock task")
-        except Exception as exc:
-            self._record_error(f"Failed to pause dispatcher: {exc}")
-            raise BatteryManagerError(f"Failed to pause dispatcher: {exc}") from exc
-
-        try:
+            submit_kwargs: dict[str, Any] = {
+                "station_id": "CURRENT",
+                "destination_id": self._dock_station_id,
+                "priority": 9999,
+                "notes": f"auto-generated critical battery dock task for {resolved_robot_id}",
+            }
+            if not (resolved_robot_id == _LEGACY_ROBOT_ID and not self._registered_logistics_robot_ids()):
+                submit_kwargs["task_id"] = f"dock-{resolved_robot_id}-{uuid4().hex}"
             task = await self._task_queue.submit_task(
-                station_id="CURRENT",
-                destination_id=self._dock_station_id,
-                priority=9999,
-                notes="auto-generated critical battery dock task",
+                **submit_kwargs,
             )
         except Exception as exc:
             self._record_error(f"Failed to submit dock task: {exc}")
             async with self._lock:
-                self._last_result = f"dock task submission failed: {exc}"
+                self._last_result[resolved_robot_id] = f"dock task submission failed: {exc}"
             logger.exception("Battery manager failed to submit dock task")
             return
 
         async with self._lock:
-            self._dock_task_id = task.id
-            self._dock_task_active = True
-            self._last_result = "charging mode active"
+            self._dock_task_id[resolved_robot_id] = task.id
+            self._dock_task_active[resolved_robot_id] = True
+            self._last_result[resolved_robot_id] = "charging mode active"
 
-        try:
-            await self._dispatcher.resume()
-            logger.info("Dispatcher resumed for dock task dispatch")
-        except Exception as exc:
-            self._record_error(f"Failed to resume dispatcher: {exc}")
-            raise BatteryManagerError(f"Failed to resume dispatcher: {exc}") from exc
+        if should_pause_dispatcher:
+            try:
+                await self._dispatcher.resume()
+                async with self._lock:
+                    self._dispatcher_paused[resolved_robot_id] = False
+                logger.info("Dispatcher resumed for dock task dispatch")
+            except Exception as exc:
+                self._record_error(f"Failed to resume dispatcher: {exc}")
+                raise BatteryManagerError(f"Failed to resume dispatcher: {exc}") from exc
 
-    async def handle_battery_recharged(self, battery_pct: int | None = None) -> None:
+    async def handle_battery_recharged(self, battery_pct: int | None = None, *, robot_id: str | None = None) -> None:
+        resolved_robot_id = self._resolve_target_robot_id(robot_id)
+        if resolved_robot_id is None:
+            return
+
         async with self._lock:
-            self._last_battery_pct = battery_pct
-            if not self._charging_mode:
-                self._last_result = "battery recharged handled"
+            self._last_battery_pct[resolved_robot_id] = battery_pct
+            if not self._charging_mode.get(resolved_robot_id, False):
+                self._last_result[resolved_robot_id] = "battery recharged handled"
                 return
+            dispatcher_should_resume = self._dispatcher_paused.get(resolved_robot_id, False) or self._should_pause_dispatcher(
+                resolved_robot_id
+            )
 
-        try:
-            await self._dispatcher.resume()
-            logger.info("Dispatcher resumed after recharge")
-        except Exception as exc:
-            self._record_error(f"Failed to resume dispatcher: {exc}")
-            raise BatteryManagerError(f"Failed to resume dispatcher: {exc}") from exc
+        if dispatcher_should_resume:
+            try:
+                await self._dispatcher.resume()
+                logger.info("Dispatcher resumed after recharge")
+            except Exception as exc:
+                self._record_error(f"Failed to resume dispatcher: {exc}")
+                raise BatteryManagerError(f"Failed to resume dispatcher: {exc}") from exc
 
         async with self._lock:
-            self._charging_mode = False
-            self._dock_task_active = False
-            self._dock_task_id = None
-            self._last_result = "charging mode cleared"
+            self._charging_mode[resolved_robot_id] = False
+            self._dock_task_active[resolved_robot_id] = False
+            self._dock_task_id.pop(resolved_robot_id, None)
+            self._dispatcher_paused[resolved_robot_id] = False
+            self._last_result[resolved_robot_id] = "charging mode cleared"
 
     def _subscribe_events(self) -> None:
         if self._subscription_ids:
@@ -193,19 +236,81 @@ class BatteryManager:
         self._subscription_ids = []
 
     async def _on_battery_warn(self, event: Any) -> None:
-        await self.handle_battery_warn(self._extract_battery_pct(event))
+        await self.handle_battery_warn(
+            self._extract_battery_pct(event),
+            robot_id=self._extract_robot_id(event),
+        )
 
     async def _on_battery_critical(self, event: Any) -> None:
-        await self.handle_battery_critical(self._extract_battery_pct(event))
+        await self.handle_battery_critical(
+            self._extract_battery_pct(event),
+            robot_id=self._extract_robot_id(event),
+        )
 
     async def _on_battery_recharged(self, event: Any) -> None:
-        await self.handle_battery_recharged(self._extract_battery_pct(event))
+        await self.handle_battery_recharged(
+            self._extract_battery_pct(event),
+            robot_id=self._extract_robot_id(event),
+        )
 
     def _extract_battery_pct(self, event: Any) -> int | None:
         battery_pct = event.payload.get("battery_pct") if hasattr(event, "payload") else None
         if isinstance(battery_pct, int) and not isinstance(battery_pct, bool):
             return battery_pct
         return None
+
+    def _extract_robot_id(self, event: Any) -> str | None:
+        payload = event.payload if hasattr(event, "payload") and isinstance(event.payload, dict) else {}
+        robot_id = payload.get("robot_id")
+        if isinstance(robot_id, str) and robot_id:
+            return robot_id
+        return None
+
+    def _resolve_target_robot_id(self, robot_id: str | None) -> str | None:
+        if robot_id is not None:
+            if robot_id == _LEGACY_ROBOT_ID and not self._registered_logistics_robot_ids():
+                return _LEGACY_ROBOT_ID
+            return self._resolve_registered_robot_id(robot_id)
+
+        registered_robot_ids = self._registered_logistics_robot_ids()
+        if registered_robot_ids:
+            return registered_robot_ids[0]
+        return _LEGACY_ROBOT_ID
+
+    def _resolve_registered_robot_id(self, robot_id: str) -> str | None:
+        try:
+            platform = self._robot_registry.get(robot_id)
+        except RobotNotFoundError:
+            logger.warning("Battery manager ignored event for unknown robot", extra={"robot_id": robot_id})
+            return None
+
+        role = getattr(platform.config, "role", None)
+        if role is None:
+            role = getattr(platform.config.connection, "role", None)
+        if role is not None and role != _LOGISTICS_ROLE:
+            logger.warning("Battery manager ignored non-logistics robot", extra={"robot_id": robot_id, "role": role})
+            return None
+        return robot_id
+
+    def _registered_logistics_robot_ids(self) -> list[str]:
+        robot_ids: list[str] = []
+        for platform in self._robot_registry.all():
+            role = getattr(platform.config, "role", None)
+            if role is None:
+                role = getattr(platform.config.connection, "role", None)
+            if role is not None and role != _LOGISTICS_ROLE:
+                continue
+            robot_ids.append(platform.robot_id)
+        return robot_ids
+
+    def _legacy_state_robot_id(self) -> str:
+        registered_robot_ids = self._registered_logistics_robot_ids()
+        if registered_robot_ids:
+            return registered_robot_ids[0]
+        return _LEGACY_ROBOT_ID
+
+    def _should_pause_dispatcher(self, robot_id: str) -> bool:
+        return robot_id == _LEGACY_ROBOT_ID and not self._registered_logistics_robot_ids()
 
     def _record_error(self, message: str) -> None:
         self._last_error = message

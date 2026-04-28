@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -29,7 +29,7 @@ def make_frame():
 
     return VideoFrame(
         frame_id="frame-1",
-        timestamp=datetime(2026, 4, 26, 12, 0, tzinfo=UTC),
+        timestamp=datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc),
         source="stub",
         metadata={"zone_id": "PLANTATION_NORTH"},
     )

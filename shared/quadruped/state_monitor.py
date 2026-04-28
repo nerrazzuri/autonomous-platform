@@ -61,16 +61,20 @@ class StateMonitor:
         database: Database | None = None,
         poll_interval_seconds: float | None = None,
         persist_telemetry: bool = True,
+        robot_id: str = "default",
     ):
         config = get_config()
         resolved_interval = poll_interval_seconds if poll_interval_seconds is not None else config.heartbeat.interval_seconds
         if resolved_interval <= 0:
             raise StateMonitorError("poll_interval_seconds must be > 0")
+        if not isinstance(robot_id, str) or not robot_id.strip():
+            raise StateMonitorError("robot_id must be a non-empty string")
 
         self._sdk_adapter = sdk_adapter or get_sdk_adapter()
         self._database = database or get_database()
         self._poll_interval_seconds = resolved_interval
         self._persist_telemetry = persist_telemetry
+        self.robot_id = robot_id
         self._current_state: QuadrupedState | None = None
         self._state_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
@@ -226,7 +230,9 @@ class StateMonitor:
 
     def _safe_publish(self, event_name: EventName, payload: dict[str, Any]) -> None:
         try:
-            get_event_bus().publish_nowait(event_name, payload=payload, source=__name__)
+            enriched_payload = dict(payload)
+            enriched_payload["robot_id"] = self.robot_id
+            get_event_bus().publish_nowait(event_name, payload=enriched_payload, source=__name__)
         except asyncio.QueueFull:
             logger.warning("State monitor event bus queue full", extra={"event_name": event_name.value})
         except Exception:

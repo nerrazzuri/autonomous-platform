@@ -47,7 +47,11 @@ async def heartbeat_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(heartbeat_module, "get_event_bus", lambda: event_bus)
 
     adapter = FakeAdapter()
-    controller = heartbeat_module.HeartbeatController(sdk_adapter=adapter, interval_seconds=0.01)
+    controller = heartbeat_module.HeartbeatController(
+        sdk_adapter=adapter,
+        interval_seconds=0.01,
+        robot_id="robot-1",
+    )
     yield controller, adapter, event_bus, heartbeat_module
     await controller.stop()
     await event_bus.stop()
@@ -212,6 +216,58 @@ def test_invalid_interval_rejected() -> None:
 
     with pytest.raises(HeartbeatError):
         HeartbeatController(sdk_adapter=FakeAdapter(), interval_seconds=0)
+
+
+def test_constructor_accepts_robot_id() -> None:
+    from quadruped.heartbeat import HeartbeatController
+
+    controller = HeartbeatController(
+        sdk_adapter=FakeAdapter(),
+        interval_seconds=0.01,
+        robot_id="robot-7",
+    )
+
+    assert controller.robot_id == "robot-7"
+
+
+def test_constructor_rejects_empty_robot_id() -> None:
+    from quadruped.heartbeat import HeartbeatError, HeartbeatController
+
+    with pytest.raises(HeartbeatError, match="robot_id"):
+        HeartbeatController(sdk_adapter=FakeAdapter(), interval_seconds=0.01, robot_id="")
+
+
+def test_default_robot_id_is_default() -> None:
+    from quadruped.heartbeat import HeartbeatController
+
+    controller = HeartbeatController(sdk_adapter=FakeAdapter(), interval_seconds=0.01)
+
+    assert controller.robot_id == "default"
+
+
+@pytest.mark.asyncio
+async def test_published_events_include_robot_id(heartbeat_env) -> None:
+    from core.event_bus import EventName
+
+    controller, _, event_bus, _ = heartbeat_env
+    events = []
+
+    def callback(event):
+        events.append(event)
+
+    event_bus.subscribe(EventName.SYSTEM_STARTED, callback, subscriber_name="test-started")
+    event_bus.subscribe(EventName.SYSTEM_STOPPING, callback, subscriber_name="test-stopping")
+
+    await controller.start()
+    await event_bus.wait_until_idle(timeout=0.5)
+    await controller.stop()
+    await event_bus.wait_until_idle(timeout=0.5)
+
+    assert [event.name for event in events] == [EventName.SYSTEM_STARTED, EventName.SYSTEM_STOPPING]
+    assert events[0].payload["robot_id"] == "robot-1"
+    assert events[0].payload["module"] == "heartbeat"
+    assert events[1].payload["robot_id"] == "robot-1"
+    assert events[1].payload["module"] == "heartbeat"
 
 
 def test_global_get_heartbeat_controller_returns_controller() -> None:

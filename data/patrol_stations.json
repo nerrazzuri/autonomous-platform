@@ -1,0 +1,14 @@
+{
+  "stations": [
+    {
+      "id": "DOCK",
+      "name": "Patrol Dock",
+      "station_type": "dock",
+      "x": 0.0,
+      "y": 0.0,
+      "metadata": {
+        "route_type": "patrol"
+      }
+    }
+  ]
+}

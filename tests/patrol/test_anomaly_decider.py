@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -74,7 +74,7 @@ def test_threat_object_returns_critical() -> None:
     result = decider.decide(
         make_result(make_object(label="fire", threat_level="THREAT", reason="Visible flames")),
         make_zone(),
-        current_time=datetime(2026, 4, 26, 12, 0, tzinfo=UTC),
+        current_time=datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc),
     )
 
     assert result.alert_required is True
@@ -91,7 +91,7 @@ def test_suspicious_outside_time_window_returns_warning() -> None:
     result = decider.decide(
         make_result(make_object()),
         make_zone(with_time_rule=True),
-        current_time=datetime(2026, 4, 26, 12, 0, tzinfo=UTC),
+        current_time=datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc),
     )
 
     assert result.alert_required is True
@@ -108,7 +108,7 @@ def test_suspicious_inside_time_window_escalates_critical() -> None:
     result = decider.decide(
         make_result(make_object()),
         make_zone(with_time_rule=True),
-        current_time=datetime(2026, 4, 26, 22, 0, tzinfo=UTC),
+        current_time=datetime(2026, 4, 26, 22, 0, tzinfo=timezone.utc),
     )
 
     assert result.alert_required is True

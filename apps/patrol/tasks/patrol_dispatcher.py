@@ -10,6 +10,7 @@ from shared.core.config import get_config
 from shared.core.event_bus import EventBus, EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.navigation.navigator import Navigator, get_navigator
+from shared.quadruped.robot_registry import RobotNotFoundError, RobotRegistry, get_robot_registry
 
 if TYPE_CHECKING:
     from apps.patrol.tasks.patrol_queue import PatrolQueue
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 _UNSET = object()
+_LEGACY_ROBOT_ID = "default"
+_PATROL_ROLE = "patrol"
 
 
 class PatrolDispatcherError(Exception):
@@ -52,6 +55,7 @@ class PatrolDispatcher:
         event_bus: EventBus | None = None,
         poll_interval_seconds: float = 1.0,
         dock_route_id: str = "PATROL_TO_DOCK",
+        robot_registry: RobotRegistry | None = None,
     ) -> None:
         if not isinstance(poll_interval_seconds, (int, float)) or float(poll_interval_seconds) <= 0:
             raise PatrolDispatcherError("poll_interval_seconds must be > 0")
@@ -62,6 +66,7 @@ class PatrolDispatcher:
         self._navigator = navigator or get_navigator()
         self._observer = observer or get_observer()
         self._event_bus = event_bus or get_event_bus()
+        self._robot_registry = robot_registry or get_robot_registry()
         self._poll_interval_seconds = float(poll_interval_seconds)
         self._dock_route_id = dock_route_id.strip()
 
@@ -73,9 +78,14 @@ class PatrolDispatcher:
         self._last_result: str | None = None
         self._loop_iteration = 0
         self._last_error: str | None = None
+        self._active_cycles: dict[str, str] = {}
+        self._active_routes: dict[str, str] = {}
+        self._waypoint_events_by_robot: dict[str, list[dict[str, Any]]] = {}
+        self._dispatch_tasks: dict[str, asyncio.Task[bool]] = {}
 
         self._state_lock = asyncio.Lock()
         self._lifecycle_lock = asyncio.Lock()
+        self._dispatch_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._subscription_ids: list[str] = []
@@ -101,8 +111,7 @@ class PatrolDispatcher:
 
             await self._set_state(running=False)
             self._stop_event.set()
-            if self._active_cycle_id is not None:
-                await self._cancel_navigation("dispatcher stopped")
+            await self._cancel_active_dispatches("dispatcher stopped")
 
             task = self._task
             self._task = None
@@ -116,24 +125,36 @@ class PatrolDispatcher:
             logger.info("Patrol dispatcher stopped")
 
     async def dispatch_once(self) -> bool:
+        return await self._dispatch_for_robot()
+
+    async def _dispatch_for_robot(self, robot_id: str | None = None) -> bool:
         if self._suspended:
             return False
-        if self._active_cycle_id is not None:
-            return False
-        if self._navigator.is_navigating():
-            return False
 
-        cycle = await self._patrol_queue.get_next_cycle()
-        if cycle is None:
+        dispatch_target = self._resolve_dispatch_target(robot_id)
+        if dispatch_target is None:
             return False
 
-        await self._set_state(active_cycle_id=cycle.cycle_id, active_route_id=cycle.route_id)
-        self._waypoint_events = []
+        resolved_robot_id, navigator = dispatch_target
+        if resolved_robot_id in self._active_cycles:
+            return False
+        if navigator.is_navigating():
+            return False
 
+        cycle = None
         try:
-            await self._patrol_queue.mark_active(cycle.cycle_id)
-            result = await self._navigator.execute_route_by_id(cycle.route_id, task_id=cycle.cycle_id)
-            observed_count, anomaly_ids = await self._process_waypoint_events(cycle.cycle_id)
+            async with self._dispatch_lock:
+                if resolved_robot_id in self._active_cycles or navigator.is_navigating():
+                    return False
+                cycle = await self._get_next_cycle_for_robot(resolved_robot_id)
+                if cycle is None:
+                    return False
+
+                await self._set_active_cycle_state(resolved_robot_id, cycle.cycle_id, cycle.route_id)
+                await self._patrol_queue.mark_active(cycle.cycle_id)
+
+            result = await navigator.execute_route_by_id(cycle.route_id, task_id=cycle.cycle_id)
+            observed_count, anomaly_ids = await self._process_waypoint_events(resolved_robot_id, cycle.cycle_id)
 
             if result.success:
                 stats = {
@@ -150,35 +171,39 @@ class PatrolDispatcher:
                         "cycle_id": cycle.cycle_id,
                         "route_id": cycle.route_id,
                         "status": "completed",
+                        "robot_id": resolved_robot_id,
                         **stats,
                     },
                     task_id=cycle.cycle_id,
                 )
-                await self._return_to_dock()
+                await self._return_to_dock(resolved_robot_id)
                 return True
 
             reason = self._navigation_failure_reason(result)
-            await self._handle_cycle_failure(cycle.cycle_id, cycle.route_id, reason)
+            await self._handle_cycle_failure(resolved_robot_id, cycle.cycle_id, cycle.route_id, reason)
             return True
         except Exception as exc:
+            if cycle is None:
+                self._last_error = str(exc)
+                logger.exception("Patrol dispatcher cycle selection failed", extra={"robot_id": resolved_robot_id})
+                return False
             self._last_error = str(exc)
             logger.exception(
                 "Patrol dispatcher cycle failed unexpectedly",
-                extra={"cycle_id": cycle.cycle_id, "route_id": cycle.route_id},
+                extra={"cycle_id": cycle.cycle_id, "route_id": cycle.route_id, "robot_id": resolved_robot_id},
             )
-            await self._handle_cycle_failure(cycle.cycle_id, cycle.route_id, str(exc), mark_failed=True)
+            await self._handle_cycle_failure(resolved_robot_id, cycle.cycle_id, cycle.route_id, str(exc), mark_failed=True)
             return True
         finally:
-            self._waypoint_events = []
-            await self._clear_active_state()
+            if cycle is not None:
+                await self._clear_active_cycle_state(resolved_robot_id)
 
     async def suspend(self, reason: str = "suspended") -> None:
         normalized_reason = self._normalize_reason(reason, default="suspended")
         if self._suspended:
             return
         await self._set_state(suspended=True, last_result=normalized_reason)
-        if self._active_cycle_id is not None:
-            await self._cancel_navigation(normalized_reason)
+        await self._cancel_active_dispatches(normalized_reason)
         await self._publish_event(EventName.PATROL_SUSPENDED, {"reason": normalized_reason}, task_id=self._active_cycle_id)
 
     async def resume(self, reason: str = "resumed") -> None:
@@ -217,7 +242,11 @@ class PatrolDispatcher:
             await self._increment_loop_iteration()
             try:
                 if not self._suspended:
-                    await self.dispatch_once()
+                    patrol_robot_ids = self._registered_patrol_robot_ids()
+                    if patrol_robot_ids:
+                        self._schedule_patrol_dispatches(patrol_robot_ids)
+                    else:
+                        await self.dispatch_once()
             except Exception as exc:
                 self._last_error = str(exc)
                 logger.exception("Patrol dispatcher loop iteration failed")
@@ -252,6 +281,11 @@ class PatrolDispatcher:
                 self._on_waypoint_arrived,
                 subscriber_name="patrol-dispatcher",
             ),
+            self._event_bus.subscribe(
+                EventName.QUADRUPED_IDLE,
+                self._on_quadruped_idle,
+                subscriber_name="patrol-dispatcher",
+            ),
         ]
 
     def _unsubscribe_all(self) -> None:
@@ -267,26 +301,43 @@ class PatrolDispatcher:
 
     async def _handle_estop_triggered(self, event: Any) -> None:
         reason = self._normalize_reason(getattr(event, "payload", {}).get("reason"), default="estop triggered")
-        await self._set_state(suspended=True, last_result=reason)
-        if self._active_cycle_id is not None:
-            await self._cancel_navigation(reason)
+        robot_id = self._resolve_event_robot_id(event)
+        if robot_id is None and self._registered_patrol_robot_ids():
+            return
+        if robot_id == _LEGACY_ROBOT_ID and not self._registered_patrol_robot_ids():
+            await self._set_state(suspended=True, last_result=reason)
+            if self._active_cycle_id is not None:
+                await self._cancel_navigation(reason)
+            return
+        if robot_id is not None and self._active_cycles.get(robot_id) is not None:
+            await self._cancel_navigation(reason, robot_id=robot_id)
+
+    async def _on_quadruped_idle(self, event: Any) -> None:
+        robot_id = self._resolve_event_robot_id(event)
+        if robot_id is None and self._registered_patrol_robot_ids():
+            return
+        self._schedule_dispatch_for_robot(robot_id)
 
     async def _on_waypoint_arrived(self, event: Any) -> None:
-        if self._active_cycle_id is None:
+        robot_id = self._resolve_event_robot_id(event)
+        if robot_id is None:
             return
 
+        active_cycle_id = self._active_cycles.get(robot_id)
+        if active_cycle_id is None:
+            return
         payload = dict(getattr(event, "payload", {}) or {})
         payload_task_id = payload.get("task_id") or payload.get("cycle_id") or getattr(event, "task_id", None)
-        if payload_task_id is not None and payload_task_id != self._active_cycle_id:
+        if payload_task_id is not None and payload_task_id != active_cycle_id:
             return
 
-        self._waypoint_events.append(payload)
+        self._waypoint_events_by_robot.setdefault(robot_id, []).append(payload)
 
-    async def _process_waypoint_events(self, cycle_id: str) -> tuple[int, list[str]]:
+    async def _process_waypoint_events(self, robot_id: str, cycle_id: str) -> tuple[int, list[str]]:
         observed_count = 0
         anomaly_ids: list[str] = []
 
-        for payload in list(self._waypoint_events):
+        for payload in list(self._waypoint_events_by_robot.get(robot_id, [])):
             metadata = payload.get("metadata")
             if not isinstance(metadata, dict):
                 continue
@@ -320,6 +371,7 @@ class PatrolDispatcher:
 
     async def _handle_cycle_failure(
         self,
+        robot_id: str,
         cycle_id: str,
         route_id: str,
         reason: str,
@@ -342,6 +394,7 @@ class PatrolDispatcher:
             {
                 "cycle_id": cycle_id,
                 "route_id": route_id,
+                "robot_id": robot_id,
                 "status": "failed",
                 "reason": normalized_reason,
             },
@@ -353,13 +406,16 @@ class PatrolDispatcher:
             await self._set_state(suspended=True)
             await self._publish_event(
                 EventName.PATROL_SUSPENDED,
-                {"reason": "max_consecutive_failures"},
+                {"reason": "max_consecutive_failures", "robot_id": robot_id},
                 task_id=cycle_id,
             )
 
-    async def _return_to_dock(self) -> None:
+    async def _return_to_dock(self, robot_id: str) -> None:
+        navigator = self._resolve_navigator_for_robot(robot_id)
+        if navigator is None:
+            return
         try:
-            result = await self._navigator.execute_route_by_id(self._dock_route_id)
+            result = await navigator.execute_route_by_id(self._dock_route_id)
         except Exception as exc:
             logger.warning("Patrol dock route failed to start", extra={"route_id": self._dock_route_id, "error": str(exc)})
             return
@@ -370,8 +426,11 @@ class PatrolDispatcher:
                 extra={"route_id": self._dock_route_id, "message": getattr(result, "message", "dock failed")},
             )
 
-    async def _cancel_navigation(self, reason: str) -> None:
-        cancel_navigation = getattr(self._navigator, "cancel_navigation", None)
+    async def _cancel_navigation(self, reason: str, *, robot_id: str | None = None) -> None:
+        navigator = self._navigator if robot_id is None else self._resolve_navigator_for_robot(robot_id)
+        if navigator is None:
+            return
+        cancel_navigation = getattr(navigator, "cancel_navigation", None)
         if cancel_navigation is None:
             return
         try:
@@ -418,6 +477,138 @@ class PatrolDispatcher:
                 self._last_result = last_result
             if loop_iteration is not _UNSET:
                 self._loop_iteration = int(loop_iteration)
+
+    async def _set_active_cycle_state(self, robot_id: str, cycle_id: str, route_id: str) -> None:
+        self._active_cycles[robot_id] = cycle_id
+        self._active_routes[robot_id] = route_id
+        self._waypoint_events_by_robot[robot_id] = []
+        if robot_id == self._legacy_state_robot_id():
+            self._waypoint_events = []
+            await self._set_state(active_cycle_id=cycle_id, active_route_id=route_id)
+
+    async def _clear_active_cycle_state(self, robot_id: str) -> None:
+        self._active_cycles.pop(robot_id, None)
+        self._active_routes.pop(robot_id, None)
+        self._waypoint_events_by_robot.pop(robot_id, None)
+        if robot_id == self._legacy_state_robot_id():
+            self._waypoint_events = []
+            await self._clear_active_state()
+
+    def _schedule_patrol_dispatches(self, patrol_robot_ids: list[str]) -> None:
+        for robot_id in patrol_robot_ids:
+            self._schedule_dispatch_for_robot(robot_id)
+
+    def _schedule_dispatch_for_robot(self, robot_id: str | None) -> None:
+        dispatch_target = self._resolve_dispatch_target(robot_id)
+        if dispatch_target is None:
+            return
+        resolved_robot_id, navigator = dispatch_target
+        existing_task = self._dispatch_tasks.get(resolved_robot_id)
+        if existing_task is not None and not existing_task.done():
+            return
+        if resolved_robot_id in self._active_cycles or navigator.is_navigating():
+            return
+        task = asyncio.create_task(
+            self._dispatch_for_robot(resolved_robot_id),
+            name=f"patrol-dispatcher-{resolved_robot_id}",
+        )
+        self._dispatch_tasks[resolved_robot_id] = task
+        task.add_done_callback(lambda completed_task, rid=resolved_robot_id: self._on_dispatch_task_done(rid, completed_task))
+
+    def _on_dispatch_task_done(self, robot_id: str, task: asyncio.Task[bool]) -> None:
+        current_task = self._dispatch_tasks.get(robot_id)
+        if current_task is task:
+            self._dispatch_tasks.pop(robot_id, None)
+        try:
+            task.result()
+        except Exception:
+            logger.exception("Patrol dispatcher background dispatch failed", extra={"robot_id": robot_id})
+
+    async def _cancel_active_dispatches(self, reason: str) -> None:
+        active_robot_ids = [robot_id for robot_id in self._active_cycles if self._active_cycles.get(robot_id) is not None]
+        for robot_id in active_robot_ids:
+            await self._cancel_navigation(reason, robot_id=robot_id)
+        active_tasks = [task for task in self._dispatch_tasks.values() if not task.done()]
+        if active_tasks:
+            await asyncio.gather(*active_tasks, return_exceptions=True)
+        self._dispatch_tasks.clear()
+
+    async def _get_next_cycle_for_robot(self, robot_id: str):
+        try:
+            cycle = await self._patrol_queue.get_next_cycle(robot_id=robot_id)
+        except TypeError:
+            cycle = await self._patrol_queue.get_next_cycle()
+        if cycle is None:
+            return None
+        cycle_robot_id = getattr(cycle, "robot_id", None)
+        if cycle_robot_id is not None and cycle_robot_id != robot_id:
+            return None
+        return cycle
+
+    def _resolve_dispatch_target(self, robot_id: str | None) -> tuple[str, Navigator] | None:
+        if robot_id is not None:
+            if robot_id == _LEGACY_ROBOT_ID and not self._registered_patrol_robot_ids():
+                return (_LEGACY_ROBOT_ID, self._navigator)
+            return self._resolve_registered_dispatch_target(robot_id)
+        patrol_robot_ids = self._registered_patrol_robot_ids()
+        if patrol_robot_ids:
+            return self._resolve_registered_dispatch_target(patrol_robot_ids[0])
+        return (_LEGACY_ROBOT_ID, self._navigator)
+
+    def _resolve_registered_dispatch_target(self, robot_id: str) -> tuple[str, Navigator] | None:
+        try:
+            platform = self._robot_registry.get(robot_id)
+        except RobotNotFoundError:
+            logger.warning("Patrol dispatcher ignored event for unknown robot", extra={"robot_id": robot_id})
+            return None
+        role = getattr(platform.config, "role", None)
+        if role is None:
+            role = getattr(platform.config.connection, "role", None)
+        if role is not None and role != _PATROL_ROLE:
+            logger.warning("Patrol dispatcher ignored non-patrol robot", extra={"robot_id": robot_id, "role": role})
+            return None
+        return (robot_id, platform.navigator)
+
+    def _resolve_event_robot_id(self, event: Any) -> str | None:
+        payload = getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            payload = {}
+        event_robot_id = payload.get("robot_id")
+        if isinstance(event_robot_id, str) and event_robot_id:
+            if event_robot_id == _LEGACY_ROBOT_ID and not self._registered_patrol_robot_ids():
+                return _LEGACY_ROBOT_ID
+            if self._resolve_registered_dispatch_target(event_robot_id) is not None:
+                return event_robot_id
+            return None
+        patrol_robot_ids = self._registered_patrol_robot_ids()
+        if patrol_robot_ids:
+            return patrol_robot_ids[0]
+        return _LEGACY_ROBOT_ID
+
+    def _registered_patrol_robot_ids(self) -> list[str]:
+        robot_ids: list[str] = []
+        for platform in self._robot_registry.all():
+            role = getattr(platform.config, "role", None)
+            if role is None:
+                role = getattr(platform.config.connection, "role", None)
+            if role is not None and role != _PATROL_ROLE:
+                continue
+            robot_ids.append(platform.robot_id)
+        return robot_ids
+
+    def _legacy_state_robot_id(self) -> str:
+        patrol_robot_ids = self._registered_patrol_robot_ids()
+        if patrol_robot_ids:
+            return patrol_robot_ids[0]
+        return _LEGACY_ROBOT_ID
+
+    def _resolve_navigator_for_robot(self, robot_id: str) -> Navigator | None:
+        if robot_id == _LEGACY_ROBOT_ID and not self._registered_patrol_robot_ids():
+            return self._navigator
+        try:
+            return self._robot_registry.get(robot_id).navigator
+        except RobotNotFoundError:
+            return None
 
     async def _increment_loop_iteration(self) -> None:
         async with self._state_lock:

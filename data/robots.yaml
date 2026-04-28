@@ -1,0 +1,20 @@
+- robot_id: R1
+  connection:
+    robot_ip: 192.168.1.101
+    sdk_port: 43988
+    local_ip: 192.168.1.10
+    local_port: 50051
+  capabilities:
+    lidar: true
+    camera: true
+    speaker: true
+
+- robot_id: R2
+  connection:
+    robot_ip: 192.168.1.102
+    sdk_port: 43988
+    local_ip: 192.168.1.10
+    local_port: 50052
+  capabilities:
+    lidar: false
+    camera: true
