@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -13,274 +12,208 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-class FakeDatabase:
-    def __init__(self):
-        self.initialized = False
-        self.events: list[dict[str, object]] = []
-        self.fail = False
-
-    async def initialize(self):
-        self.initialized = True
-
-    async def log_event(self, **kwargs):
-        if self.fail:
-            raise RuntimeError("db failure")
-        self.events.append(kwargs)
-        return kwargs.get("event_id", "db-event-id")
-
-
-class FakeBroker:
-    def __init__(self):
-        self.messages: list[dict[str, object]] = []
-        self.fail = False
-
-    async def broadcast(self, message, **kwargs):
-        if self.fail:
-            raise RuntimeError("broadcast failure")
-        self.messages.append(message)
-
-
-def make_alert_event(module, **payload_overrides):
-    payload = {"reason": "telemetry_timeout", "severity": "critical", "station_id": "A"}
-    payload.update(payload_overrides)
-    return module.Event(
-        name=module.EventName.SYSTEM_ALERT,
-        payload=payload,
-        event_id="alert-event-1",
-        timestamp=datetime(2026, 4, 24, 12, 0, tzinfo=timezone.utc),
-        source="quadruped.monitor",
-        task_id="task-9",
-    )
-
-
 @pytest.fixture
 def alerts_module():
-    import api.alerts as module
+    import shared.observability.alerts as module
 
     return module
 
 
-def test_alert_message_from_event(alerts_module) -> None:
-    event = make_alert_event(
+def make_alert(alerts_module, **overrides):
+    payload = {
+        "alert_id": "alert-1",
+        "timestamp": "2026-04-28T08:00:00Z",
+        "severity": "warning",
+        "source": "watchdog",
+        "event_type": "watchdog_stale_robot",
+        "message": "Robot telemetry is stale",
+        "robot_id": "robot-01",
+        "metadata": {"component": "watchdog"},
+    }
+    payload.update(overrides)
+    return alerts_module.Alert(**payload)
+
+
+def test_alert_validates_required_fields(alerts_module) -> None:
+    with pytest.raises(ValueError, match="severity"):
+        make_alert(alerts_module, severity="emergency")
+
+    with pytest.raises(ValueError, match="source"):
+        make_alert(alerts_module, source="   ")
+
+    with pytest.raises(ValueError, match="event_type"):
+        make_alert(alerts_module, event_type="")
+
+    with pytest.raises(ValueError, match="message"):
+        make_alert(alerts_module, message="  ")
+
+
+def test_alert_redacts_sensitive_metadata(alerts_module) -> None:
+    alert = make_alert(
         alerts_module,
-        message="Telemetry stopped updating",
-        active_task_id="task-9",
-        station_id="A",
-        battery_pct=12,
+        metadata={
+            "password": "super-secret",
+            "nested": {"api_key": "abc123"},
+            "labels": {"a", "b"},
+        },
     )
 
-    alert = alerts_module.AlertMessage.from_event(event)
-
-    assert alert.alert_id == "alert-event-1"
-    assert alert.severity == "critical"
-    assert alert.reason == "telemetry_timeout"
-    assert alert.module == "quadruped.monitor"
-    assert alert.message == "Telemetry stopped updating"
-    assert alert.active_task_id == "task-9"
-    assert alert.metadata == {"station_id": "A", "battery_pct": 12}
-    assert alert.to_dict()["timestamp"] == "2026-04-24T12:00:00+00:00"
+    assert alert.metadata["password"] == alerts_module.MASKED_VALUE
+    assert alert.metadata["nested"]["api_key"] == alerts_module.MASKED_VALUE
+    assert sorted(alert.metadata["labels"]) == ["a", "b"]
 
 
-def test_alert_message_defaults_missing_reason(alerts_module) -> None:
-    event = alerts_module.Event(
-        name=alerts_module.EventName.SYSTEM_ALERT,
-        payload={},
-        event_id="alert-event-2",
-        timestamp=datetime(2026, 4, 24, 12, 5, tzinfo=timezone.utc),
-        source=None,
+def test_alert_router_emits_and_lists_alerts(alerts_module) -> None:
+    router = alerts_module.AlertRouter(max_alerts=10)
+    first = router.emit(make_alert(alerts_module, alert_id="alert-1", message="first"))
+    second = router.emit(make_alert(alerts_module, alert_id="alert-2", message="second"))
+
+    assert router.get("alert-1") == first
+    assert [alert.alert_id for alert in router.list_alerts()] == ["alert-2", "alert-1"]
+    assert router.list_alerts(limit=1)[0].alert_id == "alert-2"
+    assert second.message == "second"
+
+
+def test_alert_router_filters(alerts_module) -> None:
+    router = alerts_module.AlertRouter(max_alerts=10)
+    info_alert = router.emit(
+        make_alert(
+            alerts_module,
+            alert_id="alert-info",
+            severity="info",
+            robot_id="robot-01",
+            event_type="watchdog_restored",
+        )
+    )
+    warning_alert = router.emit(
+        make_alert(
+            alerts_module,
+            alert_id="alert-warning",
+            severity="warning",
+            robot_id="robot-02",
+            event_type="battery_critical",
+            source="battery",
+        )
+    )
+    router.acknowledge(info_alert.alert_id, actor_id="operator-1")
+
+    assert [alert.alert_id for alert in router.list_alerts(severity="warning")] == [warning_alert.alert_id]
+    assert [alert.alert_id for alert in router.list_alerts(robot_id="robot-01")] == [info_alert.alert_id]
+    assert [alert.alert_id for alert in router.list_alerts(acknowledged=True)] == [info_alert.alert_id]
+    assert [alert.alert_id for alert in router.list_alerts(acknowledged=False)] == [warning_alert.alert_id]
+
+
+def test_alert_router_drops_oldest_when_capacity_exceeded(alerts_module) -> None:
+    router = alerts_module.AlertRouter(max_alerts=2)
+    router.emit(make_alert(alerts_module, alert_id="alert-1"))
+    router.emit(make_alert(alerts_module, alert_id="alert-2"))
+    router.emit(make_alert(alerts_module, alert_id="alert-3"))
+
+    assert router.get("alert-1") is None
+    assert [alert.alert_id for alert in router.list_alerts()] == ["alert-3", "alert-2"]
+
+
+def test_acknowledge_updates_alert_fields(alerts_module) -> None:
+    router = alerts_module.AlertRouter(max_alerts=2)
+    router.emit(make_alert(alerts_module, alert_id="alert-1"))
+
+    acknowledged = router.acknowledge("alert-1", actor_id="operator-7")
+
+    assert acknowledged.acknowledged is True
+    assert acknowledged.acknowledged_by == "operator-7"
+    assert acknowledged.acknowledged_at is not None
+
+
+def test_emit_alert_helper_catches_router_failure(alerts_module, monkeypatch: pytest.MonkeyPatch) -> None:
+    class BrokenRouter:
+        def emit(self, _alert):
+            raise RuntimeError("router exploded")
+
+    monkeypatch.setattr(alerts_module, "_alert_router", BrokenRouter())
+
+    emitted = alerts_module.emit_alert(
+        severity="critical",
+        source="system",
+        event_type="broken",
+        message="This should not raise",
     )
 
-    alert = alerts_module.AlertMessage.from_event(event)
-
-    assert alert.reason == "unspecified"
-    assert alert.module == "unknown"
-    assert alert.message == "WARNING: unspecified"
+    assert emitted is None
 
 
-def test_alert_message_rejects_invalid_severity(alerts_module) -> None:
-    event = make_alert_event(alerts_module, severity="emergency")
+def test_warning_error_and_critical_alerts_create_audit_events(alerts_module, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
 
-    with pytest.raises(alerts_module.AlertManagerError, match="severity"):
-        alerts_module.AlertMessage.from_event(event)
+    def fake_audit_event(**kwargs):
+        calls.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(alerts_module, "audit_event", fake_audit_event)
+
+    router = alerts_module.AlertRouter(max_alerts=10)
+    router.emit(make_alert(alerts_module, alert_id="alert-warning", severity="warning"))
+    router.emit(make_alert(alerts_module, alert_id="alert-error", severity="error"))
+    router.emit(make_alert(alerts_module, alert_id="alert-critical", severity="critical"))
+    router.emit(make_alert(alerts_module, alert_id="alert-info", severity="info"))
+
+    assert [call["severity"] for call in calls] == ["warning", "error", "critical"]
+    assert all(call["event_type"] == "alert_emitted" for call in calls)
 
 
 @pytest.mark.asyncio
-async def test_start_and_stop_are_idempotent(alerts_module) -> None:
-    from core.event_bus import EventBus
+async def test_watchdog_system_alert_event_emits_alert(alerts_module) -> None:
+    from shared.core.event_bus import EventBus, EventName
 
     event_bus = EventBus()
-    manager = alerts_module.AlertManager(FakeDatabase(), FakeBroker(), email_enabled=False)
-    manager._event_bus = event_bus
+    router = alerts_module.AlertRouter(max_alerts=10, event_bus=event_bus)
+    await event_bus.start()
+    await router.start()
 
-    await manager.start()
-    await manager.start()
-    assert manager.is_running() is True
-    assert event_bus.subscriber_count(alerts_module.EventName.SYSTEM_ALERT) == 1
-
-    await manager.stop()
-    await manager.stop()
-    assert manager.is_running() is False
-    assert event_bus.subscriber_count(alerts_module.EventName.SYSTEM_ALERT) == 0
-
-
-@pytest.mark.asyncio
-async def test_handle_alert_persists_to_database(alerts_module) -> None:
-    database = FakeDatabase()
-    broker = FakeBroker()
-    manager = alerts_module.AlertManager(database=database, ws_broker=broker, email_enabled=False)
-    event = make_alert_event(alerts_module, message="Telemetry stopped updating")
-
-    alert = await manager.handle_alert_event(event)
-
-    assert alert.reason == "telemetry_timeout"
-    assert database.initialized is True
-    assert database.events == [
+    await event_bus.publish(
+        EventName.SYSTEM_ALERT,
         {
-            "event_name": "system.alert",
-            "payload": alert.to_dict(),
-            "source": "quadruped.monitor",
-            "task_id": "task-9",
-            "event_id": "alert-event-1",
-        }
-    ]
-    assert await manager.get_last_alert() == alert
-
-
-@pytest.mark.asyncio
-async def test_database_failure_does_not_block_broadcast(alerts_module) -> None:
-    database = FakeDatabase()
-    database.fail = True
-    broker = FakeBroker()
-    manager = alerts_module.AlertManager(database=database, ws_broker=broker, email_enabled=False)
-
-    alert = await manager.handle_alert_event(make_alert_event(alerts_module))
-
-    assert alert.alert_id == "alert-event-1"
-    assert broker.messages == [{"type": "alert", "alert": alert.to_dict()}]
-    assert manager.last_error() == "db failure"
-
-
-@pytest.mark.asyncio
-async def test_broadcast_failure_does_not_block_persistence(alerts_module) -> None:
-    database = FakeDatabase()
-    broker = FakeBroker()
-    broker.fail = True
-    manager = alerts_module.AlertManager(database=database, ws_broker=broker, email_enabled=False)
-
-    alert = await manager.handle_alert_event(make_alert_event(alerts_module))
-
-    assert database.events[0]["payload"] == alert.to_dict()
-    assert manager.last_error() == "broadcast failure"
-
-
-@pytest.mark.asyncio
-async def test_email_disabled_does_not_send(alerts_module, monkeypatch: pytest.MonkeyPatch) -> None:
-    smtp_calls: list[tuple[str, int]] = []
-
-    class FakeSMTP:
-        def __init__(self, host: str, port: int):
-            smtp_calls.append((host, port))
-
-    monkeypatch.setattr(alerts_module.smtplib, "SMTP", FakeSMTP)
-
-    manager = alerts_module.AlertManager(database=FakeDatabase(), ws_broker=FakeBroker(), email_enabled=False)
-    await manager.handle_alert_event(make_alert_event(alerts_module))
-
-    assert smtp_calls == []
-
-
-@pytest.mark.asyncio
-async def test_email_enabled_sends_email_with_complete_config(
-    alerts_module, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    sent: dict[str, object] = {}
-
-    class FakeSMTP:
-        def __init__(self, host: str, port: int):
-            sent["host"] = host
-            sent["port"] = port
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def login(self, username: str, password: str):
-            sent["login"] = (username, password)
-
-        def send_message(self, message):
-            sent["subject"] = message["Subject"]
-            sent["to"] = message["To"]
-            sent["body"] = message.get_content()
-
-    monkeypatch.setattr(
-        alerts_module,
-        "get_config",
-        lambda: SimpleNamespace(
-            alerts=SimpleNamespace(
-                smtp_host="smtp.example.com",
-                smtp_port=2525,
-                smtp_username="robot",
-                smtp_password="secret-password",
-                supervisor_email="supervisor@example.com",
-                email_enabled=True,
-            )
-        ),
+            "severity": "critical",
+            "reason": "watchdog_stale_robot",
+            "message": "Telemetry stopped updating",
+            "module": "watchdog",
+            "robot_id": "robot-01",
+        },
+        source="apps.logistics.tasks.watchdog",
+        task_id="task-55",
     )
-    monkeypatch.setattr(alerts_module.smtplib, "SMTP", FakeSMTP)
+    await event_bus.wait_until_idle(timeout=1.0)
 
-    manager = alerts_module.AlertManager(database=FakeDatabase(), ws_broker=FakeBroker(), email_enabled=True)
-    await manager.handle_alert_event(make_alert_event(alerts_module))
+    alerts = router.list_alerts()
+    assert len(alerts) == 1
+    assert alerts[0].event_type == "watchdog_stale_robot"
+    assert alerts[0].robot_id == "robot-01"
+    assert alerts[0].task_id == "task-55"
 
-    assert sent["host"] == "smtp.example.com"
-    assert sent["port"] == 2525
-    assert sent["login"] == ("robot", "secret-password")
-    assert sent["to"] == "supervisor@example.com"
-    assert sent["subject"] == "[Sumitomo Quadruped] CRITICAL alert: telemetry_timeout"
-    assert "severity: critical" in sent["body"]
-    assert '"station_id": "A"' in sent["body"]
+    await router.stop()
+    await event_bus.stop()
 
 
 @pytest.mark.asyncio
-async def test_email_incomplete_config_skips_safely(alerts_module, monkeypatch: pytest.MonkeyPatch) -> None:
-    smtp_calls: list[tuple[str, int]] = []
+async def test_battery_critical_event_emits_alert(alerts_module) -> None:
+    from shared.core.event_bus import EventBus, EventName
 
-    class FakeSMTP:
-        def __init__(self, host: str, port: int):
-            smtp_calls.append((host, port))
+    event_bus = EventBus()
+    router = alerts_module.AlertRouter(max_alerts=10, event_bus=event_bus)
+    await event_bus.start()
+    await router.start()
 
-    monkeypatch.setattr(
-        alerts_module,
-        "get_config",
-        lambda: SimpleNamespace(
-            alerts=SimpleNamespace(
-                smtp_host=None,
-                smtp_port=2525,
-                smtp_username=None,
-                smtp_password=None,
-                supervisor_email=None,
-                email_enabled=True,
-            )
-        ),
+    await event_bus.publish(
+        EventName.BATTERY_CRITICAL,
+        {"robot_id": "robot-02", "battery_pct": 9},
+        source="shared.quadruped.state_monitor",
     )
-    monkeypatch.setattr(alerts_module.smtplib, "SMTP", FakeSMTP)
+    await event_bus.wait_until_idle(timeout=1.0)
 
-    manager = alerts_module.AlertManager(database=FakeDatabase(), ws_broker=FakeBroker(), email_enabled=True)
-    alert = await manager.handle_alert_event(make_alert_event(alerts_module))
+    alerts = router.list_alerts()
+    assert len(alerts) == 1
+    assert alerts[0].source == "battery"
+    assert alerts[0].event_type == "battery_critical"
+    assert alerts[0].metadata["battery_pct"] == 9
 
-    assert alert.reason == "telemetry_timeout"
-    assert smtp_calls == []
-
-
-@pytest.mark.asyncio
-async def test_invalid_event_type_raises(alerts_module) -> None:
-    manager = alerts_module.AlertManager(database=FakeDatabase(), ws_broker=FakeBroker(), email_enabled=False)
-    event = alerts_module.Event(name=alerts_module.EventName.BATTERY_WARN, payload={"reason": "low_battery"})
-
-    with pytest.raises(alerts_module.AlertManagerError, match="SYSTEM_ALERT"):
-        await manager.handle_alert_event(event)
-
-
-def test_global_get_alert_manager_returns_manager(alerts_module) -> None:
-    assert alerts_module.get_alert_manager() is alerts_module.alert_manager
+    await router.stop()
+    await event_bus.stop()

@@ -151,7 +151,25 @@ class PatrolDispatcher:
                     return False
 
                 await self._set_active_cycle_state(resolved_robot_id, cycle.cycle_id, cycle.route_id)
+                logger.info(
+                    "Patrol cycle selected",
+                    extra={
+                        "robot_id": resolved_robot_id,
+                        "cycle_id": cycle.cycle_id,
+                        "route_id": cycle.route_id,
+                        "status": "selected",
+                    },
+                )
                 await self._patrol_queue.mark_active(cycle.cycle_id)
+                logger.info(
+                    "Patrol cycle dispatched",
+                    extra={
+                        "robot_id": resolved_robot_id,
+                        "cycle_id": cycle.cycle_id,
+                        "route_id": cycle.route_id,
+                        "status": "dispatched",
+                    },
+                )
 
             result = await navigator.execute_route_by_id(cycle.route_id, task_id=cycle.cycle_id)
             observed_count, anomaly_ids = await self._process_waypoint_events(resolved_robot_id, cycle.cycle_id)
@@ -175,6 +193,15 @@ class PatrolDispatcher:
                         **stats,
                     },
                     task_id=cycle.cycle_id,
+                )
+                logger.info(
+                    "Patrol cycle completed",
+                    extra={
+                        "robot_id": resolved_robot_id,
+                        "cycle_id": cycle.cycle_id,
+                        "route_id": cycle.route_id,
+                        "status": "completed",
+                    },
                 )
                 await self._return_to_dock(resolved_robot_id)
                 return True
@@ -316,6 +343,7 @@ class PatrolDispatcher:
         robot_id = self._resolve_event_robot_id(event)
         if robot_id is None and self._registered_patrol_robot_ids():
             return
+        logger.info("Patrol dispatcher received robot idle", extra={"robot_id": robot_id, "event_type": "robot_idle"})
         self._schedule_dispatch_for_robot(robot_id)
 
     async def _on_waypoint_arrived(self, event: Any) -> None:

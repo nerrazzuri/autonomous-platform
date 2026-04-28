@@ -176,6 +176,7 @@ class Watchdog:
         async with self._state_lock:
             self._last_connection_ok_by_robot[robot_id] = False
             self._sync_legacy_state_unlocked(robot_id)
+        logger.warning("Watchdog observed connection lost", extra={"robot_id": robot_id, "status": "connection_lost"})
 
     async def _on_connection_restored(self, event: Any) -> None:
         robot_id = self._resolve_target_robot_id(self._extract_robot_id(event))
@@ -185,6 +186,7 @@ class Watchdog:
             self._last_connection_ok_by_robot[robot_id] = True
             self._last_telemetry_at_by_robot[robot_id] = datetime.now(timezone.utc)
             self._sync_legacy_state_unlocked(robot_id)
+        logger.info("Watchdog observed connection restored", extra={"robot_id": robot_id, "status": "connection_restored"})
         if self._alert_active_by_robot.get(robot_id, self._alert_active if robot_id == self._legacy_state_robot_id() else False):
             await self._clear_alert_if_recovered(robot_id)
 
@@ -217,6 +219,7 @@ class Watchdog:
 
         now = datetime.now(timezone.utc)
         if (now - last_telemetry_at).total_seconds() > self._telemetry_timeout_seconds:
+            logger.warning("Watchdog detected stale telemetry", extra={"robot_id": robot_id, "status": "telemetry_timeout"})
             await self._set_alert(robot_id, "telemetry_timeout")
             await self._handle_active_task_interruption(robot_id, "telemetry_timeout")
             self._emit_alert("telemetry_timeout", severity="critical", robot_id=robot_id)
@@ -224,6 +227,7 @@ class Watchdog:
 
         if last_connection_ok is False:
             reason = await self._classify_connection_loss_reason(robot_id)
+            logger.warning("Watchdog detected connection fault", extra={"robot_id": robot_id, "status": reason})
             await self._set_alert(robot_id, reason)
             await self._handle_active_task_interruption(robot_id, reason)
             self._emit_alert(reason, severity="critical", robot_id=robot_id)
@@ -300,6 +304,11 @@ class Watchdog:
             )
         except Exception:
             logger.debug("Watchdog alert publish skipped", extra={"reason": reason, "severity": severity})
+            return
+        logger.warning(
+            "Watchdog emitted alert",
+            extra={"robot_id": robot_id, "status": reason, "event_type": "system_alert", "severity": severity},
+        )
 
     async def _clear_alert_if_recovered(self, robot_id: str) -> None:
         async with self._state_lock:

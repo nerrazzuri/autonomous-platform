@@ -16,7 +16,7 @@ from shared.core.config import AppConfig, get_config
 
 
 MASKED_VALUE = "***MASKED***"
-_SECRET_KEY_PARTS = ("token", "password", "secret", "api_key", "authorization")
+_SECRET_KEY_PARTS = ("token", "password", "secret", "api_key", "authorization", "bearer", "key")
 _STANDARD_LOG_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__.keys()) | {"message", "asctime"}
 _RUNTIME_CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
     "sumitomo_runtime_context",
@@ -31,9 +31,20 @@ def sanitize_log_value(value: Any) -> Any:
     return _sanitize_log_value(value)
 
 
+def redact_sensitive(value: Any) -> Any:
+    """Redact sensitive payload keys and obvious bearer-style strings."""
+
+    return _sanitize_log_value(value)
+
+
 def _sanitize_log_value(value: Any, *, key: str | None = None) -> Any:
     if key and any(part in key.lower() for part in _SECRET_KEY_PARTS):
         return MASKED_VALUE
+    if isinstance(value, str):
+        lowered = value.lower()
+        if lowered.startswith("bearer ") or lowered == "bearer":
+            return MASKED_VALUE
+        return value
     if isinstance(value, dict):
         return {item_key: _sanitize_log_value(item_value, key=str(item_key)) for item_key, item_value in value.items()}
     if isinstance(value, list):
@@ -221,6 +232,7 @@ __all__ = [
     "JsonLogFormatter",
     "clear_runtime_context",
     "get_logger",
+    "redact_sensitive",
     "sanitize_log_value",
     "set_runtime_context",
     "setup_logging",

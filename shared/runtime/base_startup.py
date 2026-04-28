@@ -173,15 +173,21 @@ async def _shutdown_registered_platforms(
 ) -> None:
     for platform in platforms:
         try:
+            logger.info("Robot heartbeat stopping", extra={"robot_id": platform.robot_id, "component": "heartbeat"})
             await platform.heartbeat.stop()
+            logger.info("Robot heartbeat stopped", extra={"robot_id": platform.robot_id, "component": "heartbeat"})
         except Exception:
             logger.exception("Robot heartbeat shutdown failed", extra={"robot_id": platform.robot_id})
         try:
+            logger.info("Robot state monitor stopping", extra={"robot_id": platform.robot_id, "component": "state_monitor"})
             await platform.state_monitor.stop()
+            logger.info("Robot state monitor stopped", extra={"robot_id": platform.robot_id, "component": "state_monitor"})
         except Exception:
             logger.exception("Robot state monitor shutdown failed", extra={"robot_id": platform.robot_id})
         try:
+            logger.info("Robot SDK disconnecting", extra={"robot_id": platform.robot_id, "component": "sdk_adapter"})
             await _disconnect_sdk_adapter(platform.sdk_adapter)
+            logger.info("Robot SDK disconnected", extra={"robot_id": platform.robot_id, "component": "sdk_adapter"})
         except Exception:
             logger.exception("Robot SDK shutdown failed", extra={"robot_id": platform.robot_id})
 
@@ -209,7 +215,7 @@ def _build_robot_platform(config: Any, robot_config: RobotConfig, route_store: A
         state_monitor=state_monitor,
         heartbeat=heartbeat,
     )
-    return RobotPlatform(
+    platform = RobotPlatform(
         robot_id=robot_id,
         config=robot_config,
         sdk_adapter=sdk_adapter,
@@ -217,6 +223,16 @@ def _build_robot_platform(config: Any, robot_config: RobotConfig, route_store: A
         state_monitor=state_monitor,
         navigator=navigator,
     )
+    logger.info(
+        "Robot platform created",
+        extra={
+            "robot_id": robot_id,
+            "role": robot_config.role,
+            "component": "robot_platform",
+            "status": "created",
+        },
+    )
+    return platform
 
 
 async def _startup_single_robot_system(config: Any, database: Any, route_store: Any, event_bus: Any, obstacle_detector: Any) -> None:
@@ -235,20 +251,29 @@ async def _startup_single_robot_system(config: Any, database: Any, route_store: 
         await event_bus.start()
         rollback_steps.append(("event_bus", event_bus.stop))
 
+        logger.info("Single-robot SDK connect attempt", extra={"component": "sdk_adapter", "robot_id": "default"})
         connected = await sdk_adapter.connect()
         if not connected:
             logger.warning("Quadruped startup SDK connect failed")
+        else:
+            logger.info("Single-robot SDK connect succeeded", extra={"component": "sdk_adapter", "robot_id": "default"})
 
+        logger.info("Single-robot heartbeat starting", extra={"component": "heartbeat", "robot_id": "default"})
         await heartbeat_controller.start()
+        logger.info("Single-robot heartbeat started", extra={"component": "heartbeat", "robot_id": "default"})
         rollback_steps.append(("heartbeat_controller", heartbeat_controller.stop))
 
+        logger.info("Single-robot state monitor starting", extra={"component": "state_monitor", "robot_id": "default"})
         await state_monitor.start()
+        logger.info("Single-robot state monitor started", extra={"component": "state_monitor", "robot_id": "default"})
         rollback_steps.append(("state_monitor", state_monitor.stop))
 
         await obstacle_detector.start()
         rollback_steps.append(("obstacle_detector", obstacle_detector.stop))
     except Exception:
+        logger.warning("Startup rollback begin", extra={"component": "startup", "status": "rollback_begin"})
         await _run_shutdown_steps(list(reversed(rollback_steps)))
+        logger.warning("Startup rollback end", extra={"component": "startup", "status": "rollback_end"})
         raise
 
     if config.quadruped.auto_stand_on_startup:
@@ -298,18 +323,33 @@ async def _startup_multi_robot_system(
         )
 
         for platform in platforms:
+            logger.info(
+                "Robot SDK connect attempt",
+                extra={"robot_id": platform.robot_id, "component": "sdk_adapter", "status": "connect_attempt"},
+            )
             connected = await platform.sdk_adapter.connect()
             connected_by_robot_id[platform.robot_id] = connected
             if not connected:
                 logger.warning("Quadruped startup SDK connect failed", extra={"robot_id": platform.robot_id})
+            else:
+                logger.info(
+                    "Robot SDK connect succeeded",
+                    extra={"robot_id": platform.robot_id, "component": "sdk_adapter", "status": "connected"},
+                )
 
+            logger.info("Robot heartbeat starting", extra={"robot_id": platform.robot_id, "component": "heartbeat"})
             await platform.heartbeat.start()
+            logger.info("Robot heartbeat started", extra={"robot_id": platform.robot_id, "component": "heartbeat"})
+            logger.info("Robot state monitor starting", extra={"robot_id": platform.robot_id, "component": "state_monitor"})
             await platform.state_monitor.start()
+            logger.info("Robot state monitor started", extra={"robot_id": platform.robot_id, "component": "state_monitor"})
 
         await obstacle_detector.start()
         rollback_steps.append(("obstacle_detector", obstacle_detector.stop))
     except Exception:
+        logger.warning("Startup rollback begin", extra={"component": "startup", "status": "rollback_begin"})
         await _run_shutdown_steps(list(reversed(rollback_steps)))
+        logger.warning("Startup rollback end", extra={"component": "startup", "status": "rollback_end"})
         raise
 
     if config.quadruped.auto_stand_on_startup:
@@ -326,11 +366,21 @@ async def startup_system() -> None:
     setup_logging()
 
     config = get_config()
+    config_path = _resolve_robot_config_path(config)
+    logger.info("Shared platform startup begin", extra={"component": "startup", "robots_yaml_path": str(config_path)})
     database = get_database()
     route_store = get_route_store()
     event_bus = get_event_bus()
     obstacle_detector = get_obstacle_detector()
     robot_configs = _load_enabled_robot_configs(config)
+    logger.info(
+        "Robot config load complete",
+        extra={
+            "component": "startup",
+            "robots_yaml_path": str(config_path),
+            "enabled_robot_count": len(robot_configs),
+        },
+    )
 
     if robot_configs:
         await _startup_multi_robot_system(config, robot_configs, database, route_store, event_bus, obstacle_detector)
@@ -341,6 +391,7 @@ async def startup_system() -> None:
 
 
 async def shutdown_system() -> None:
+    logger.info("Shared platform shutdown begin", extra={"component": "shutdown"})
     registry = get_robot_registry()
     platforms = registry.all()
     if platforms:

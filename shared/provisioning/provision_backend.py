@@ -10,6 +10,7 @@ from typing import Any
 
 import yaml
 
+from shared.core.logger import get_logger, redact_sensitive
 from shared.provisioning.provision_models import ProvisionRequest, ProvisionResult, WifiNetwork
 
 
@@ -17,6 +18,7 @@ _VALID_ROLES = {"logistics", "patrol"}
 DEFAULT_DOG_AP_IP = "192.168.234.1"
 REMOTE_DOG_SCRIPT_PATH = "/usr/local/bin/dog_wifi_provision.sh"
 REMOTE_SDK_CONFIG_PATH = "/opt/export/config/sdk_config.yaml"
+logger = get_logger(__name__)
 
 
 class ProvisioningError(RuntimeError):
@@ -295,6 +297,16 @@ def write_robot_entry(
     except OSError as exc:
         raise ProvisioningError(f"Failed to write '{robots_yaml_path}': {exc}") from exc
 
+    logger.info(
+        "robots.yaml write succeeded",
+        extra={
+            "component": "provisioning",
+            "robot_id": robot_id,
+            "role": normalized_role,
+            "status": "written",
+            "path": str(robots_yaml_path),
+        },
+    )
     return dict(entry)
 
 
@@ -330,6 +342,7 @@ def remove_robot_entry(robot_id: str, robots_yaml_path: Path) -> dict[str, Any]:
 
 
 def scan_wifi_networks() -> list[WifiNetwork]:
+    logger.info("WiFi scan started", extra={"component": "provisioning", "event_type": "wifi_scan_started"})
     try:
         result = subprocess.run(
             ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "dev", "wifi", "list"],
@@ -338,8 +351,10 @@ def scan_wifi_networks() -> list[WifiNetwork]:
             check=True,
         )
     except FileNotFoundError as exc:
+        logger.warning("WiFi scan failed", extra={"component": "provisioning", "status": "failed", "reason": "nmcli_missing"})
         raise ProvisioningError("nmcli is required for WiFi scanning but is not installed") from exc
     except subprocess.CalledProcessError as exc:
+        logger.warning("WiFi scan failed", extra={"component": "provisioning", "status": "failed"})
         raise ProvisioningError(f"nmcli WiFi scan failed: {exc.stderr or exc.stdout or exc}") from exc
 
     networks: list[WifiNetwork] = []
@@ -359,6 +374,10 @@ def scan_wifi_networks() -> list[WifiNetwork]:
                 is_robot_ap=_looks_like_robot_ap(ssid),
             )
         )
+    logger.info(
+        "WiFi scan succeeded",
+        extra={"component": "provisioning", "status": "succeeded", "network_count": len(networks)},
+    )
     return networks
 
 
@@ -370,6 +389,10 @@ def find_ip_by_mac(
     poll_interval: float = 1.0,
 ) -> str:
     normalized_mac = _normalize_mac(mac_address)
+    logger.info(
+        "Robot IP discovery started",
+        extra={"component": "provisioning", "mac": normalized_mac, "event_type": "ip_discovery_started"},
+    )
     start = time.monotonic()
 
     while True:
@@ -399,9 +422,17 @@ def find_ip_by_mac(
             if lladdr_index + 1 >= len(parts):
                 continue
             if parts[lladdr_index + 1].lower() == normalized_mac:
+                logger.info(
+                    "Robot IP discovery succeeded",
+                    extra={"component": "provisioning", "mac": normalized_mac, "status": "succeeded", "robot_ip": ip_address},
+                )
                 return ip_address
 
         if time.monotonic() - start > timeout:
+            logger.warning(
+                "Robot IP discovery failed",
+                extra={"component": "provisioning", "mac": normalized_mac, "status": "failed"},
+            )
             raise ProvisioningError(f"Timed out waiting to discover IP for MAC {normalized_mac}")
         time.sleep(poll_interval)
 
@@ -416,6 +447,10 @@ def patch_sdk_config(
 ) -> None:
     normalized_robot_ip = _require_non_empty_string(robot_ip, "robot_ip")
     normalized_pc_ip = _require_non_empty_string(pc_ip, "pc_ip")
+    logger.info(
+        "SDK config patch started",
+        extra={"component": "provisioning", "robot_ip": normalized_robot_ip, "pc_ip": normalized_pc_ip},
+    )
     client = ssh_connect(normalized_robot_ip, username, password, timeout=timeout)
     backup_command = (
         f"sudo cp -p {REMOTE_SDK_CONFIG_PATH} "
@@ -444,6 +479,10 @@ PY"""
         run_remote_command(client, patch_command, timeout=timeout)
     finally:
         client.close()
+    logger.info(
+        "SDK config patch succeeded",
+        extra={"component": "provisioning", "robot_ip": normalized_robot_ip, "pc_ip": normalized_pc_ip, "status": "succeeded"},
+    )
 
 
 def _safe_remote_read(client: Any, path: str) -> str | None:
@@ -457,18 +496,47 @@ def _safe_remote_read(client: Any, path: str) -> str | None:
 def provision_dog(request: ProvisionRequest) -> ProvisionResult:
     try:
         request = request if isinstance(request, ProvisionRequest) else ProvisionRequest(**request)
+        logger.info(
+            "Provisioning job started",
+            extra=redact_sensitive(
+                {
+                    "component": "provisioning",
+                    "event_type": "provisioning_started",
+                    "robot_id": request.robot_id,
+                    "role": request.role,
+                    "dog_ap_ssid": request.dog_ap_ssid,
+                    "target_wifi_ssid": request.target_wifi_ssid,
+                    "pc_wifi_iface": request.pc_wifi_iface,
+                    "ssh_user": request.ssh_user,
+                }
+            ),
+        )
+        logger.info(
+            "Robot AP SSH attempt",
+            extra={"component": "provisioning", "robot_id": request.robot_id, "status": "ssh_connect_attempt"},
+        )
         client = ssh_connect(DEFAULT_DOG_AP_IP, request.ssh_user, request.ssh_password, timeout=10.0)
         try:
+            logger.info("Provisioning script upload started", extra={"component": "provisioning", "robot_id": request.robot_id})
             ensure_remote_dog_script(client)
+            logger.info("Provisioning script upload succeeded", extra={"component": "provisioning", "robot_id": request.robot_id})
             provision_command = (
                 f"sudo {REMOTE_DOG_SCRIPT_PATH} "
                 f"{_shell_quote(request.target_wifi_ssid)} "
                 f"{_shell_quote(request.target_wifi_password)}"
             )
+            logger.info(
+                "Remote provisioning command started",
+                extra={"component": "provisioning", "robot_id": request.robot_id, "status": "remote_command_started"},
+            )
             try:
                 run_remote_command(client, provision_command, timeout=180.0, check=False)
             except ProvisioningError:
                 pass
+            logger.info(
+                "Remote provisioning command completed",
+                extra={"component": "provisioning", "robot_id": request.robot_id, "status": "remote_command_completed"},
+            )
             dog_mac = _safe_remote_read(client, "/tmp/dog_mac")
             dog_ip = _safe_remote_read(client, "/tmp/dog_ip")
         finally:
@@ -483,6 +551,18 @@ def provision_dog(request: ProvisionRequest) -> ProvisionResult:
         )
         pc_ip = get_pc_ip_for_target(resolved_ip)
         patch_sdk_config(resolved_ip, pc_ip, username=request.ssh_user, password=request.ssh_password)
+        logger.info(
+            "Provisioning job succeeded",
+            extra={
+                "component": "provisioning",
+                "robot_id": request.robot_id,
+                "role": request.role,
+                "dog_mac": normalized_mac,
+                "dog_ip": resolved_ip,
+                "pc_ip": pc_ip,
+                "status": "succeeded",
+            },
+        )
         return ProvisionResult(
             success=True,
             robot_id=request.robot_id,
@@ -493,6 +573,18 @@ def provision_dog(request: ProvisionRequest) -> ProvisionResult:
             message="Provisioning complete",
         )
     except ProvisioningError as exc:
+        logger.warning(
+            "Provisioning job failed",
+            extra=redact_sensitive(
+                {
+                    "component": "provisioning",
+                    "robot_id": getattr(request, "robot_id", None),
+                    "role": getattr(request, "role", None),
+                    "status": "failed",
+                    "error_message": str(exc),
+                }
+            ),
+        )
         return ProvisionResult(
             success=False,
             robot_id=request.robot_id,
