@@ -56,6 +56,7 @@ class WebSocketClient:
     websocket: WebSocket
     role: Role
     station_id: str | None = None
+    robot_id: str | None = None
     connected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -66,7 +67,13 @@ class WebSocketBroker:
         self._clients_lock = asyncio.Lock()
         self._subscription_ids: list[str] = []
 
-    async def connect(self, websocket: WebSocket, token: str | None = None, station_id: str | None = None) -> str:
+    async def connect(
+        self,
+        websocket: WebSocket,
+        token: str | None = None,
+        station_id: str | None = None,
+        robot_id: str | None = None,
+    ) -> str:
         if token is None or not token.strip():
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             logger.warning("WebSocket connection rejected", extra={"reason": "missing_token"})
@@ -86,13 +93,14 @@ class WebSocketBroker:
             websocket=websocket,
             role=auth_context.role,
             station_id=station_id,
+            robot_id=robot_id,
         )
         async with self._clients_lock:
             self._clients[client_id] = client
 
         logger.info(
             "WebSocket client connected",
-            extra={"client_id": client_id, "role": client.role.value, "station_id": station_id},
+            extra={"client_id": client_id, "role": client.role.value, "station_id": station_id, "robot_id": robot_id},
         )
         return client_id
 
@@ -110,7 +118,12 @@ class WebSocketBroker:
 
         logger.info(
             "WebSocket client disconnected",
-            extra={"client_id": client_id, "role": client.role.value, "station_id": client.station_id},
+            extra={
+                "client_id": client_id,
+                "role": client.role.value,
+                "station_id": client.station_id,
+                "robot_id": client.robot_id,
+            },
         )
 
     async def broadcast(
@@ -118,6 +131,7 @@ class WebSocketBroker:
         message: dict[str, Any],
         *,
         station_id: str | None = None,
+        robot_id: str | None = None,
         roles: set[Role] | None = None,
     ) -> None:
         async with self._clients_lock:
@@ -125,14 +139,19 @@ class WebSocketBroker:
 
         failed_client_ids: list[str] = []
         for client in clients:
-            if not self._should_send(client, station_id=station_id, roles=roles):
+            if not self._should_send(client, station_id=station_id, robot_id=robot_id, roles=roles):
                 continue
             try:
                 await client.websocket.send_json(message)
             except Exception:
                 logger.warning(
                     "WebSocket send failed",
-                    extra={"client_id": client.client_id, "role": client.role.value, "station_id": client.station_id},
+                    extra={
+                        "client_id": client.client_id,
+                        "role": client.role.value,
+                        "station_id": client.station_id,
+                        "robot_id": client.robot_id,
+                    },
                 )
                 failed_client_ids.append(client.client_id)
 
@@ -143,7 +162,9 @@ class WebSocketBroker:
         if event.name not in _RELEVANT_EVENT_NAMES:
             return
 
-        station_id = event.payload.get("station_id")
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        station_id = payload.get("station_id")
+        robot_id = payload.get("robot_id")
         message = {
             "type": "event",
             "event_name": event.name.value,
@@ -151,9 +172,9 @@ class WebSocketBroker:
             "timestamp": event.timestamp.isoformat(),
             "source": event.source,
             "task_id": event.task_id,
-            "payload": dict(event.payload),
+            "payload": dict(payload),
         }
-        await self.broadcast(message, station_id=station_id)
+        await self.broadcast(message, station_id=station_id, robot_id=robot_id)
 
     async def start(self) -> None:
         async with self._clients_lock:
@@ -184,24 +205,32 @@ class WebSocketBroker:
     def client_count(self) -> int:
         return len(self._clients)
 
-    def _should_send(self, client: WebSocketClient, *, station_id: str | None, roles: set[Role] | None) -> bool:
+    def _should_send(
+        self,
+        client: WebSocketClient,
+        *,
+        station_id: str | None,
+        robot_id: str | None,
+        roles: set[Role] | None,
+    ) -> bool:
         if roles is not None and client.role not in roles:
             return False
 
-        if station_id is None:
-            return True
+        if station_id is not None and client.role not in {Role.SUPERVISOR, Role.QA} and client.station_id != station_id:
+            return False
 
-        if client.role in {Role.SUPERVISOR, Role.QA}:
+        if client.robot_id is None or robot_id is None:
             return True
-        return client.station_id == station_id
+        return client.robot_id == robot_id
 
 
 async def websocket_endpoint(websocket: WebSocket):
     token = websocket.query_params.get("token")
     station_id = websocket.query_params.get("station_id")
+    robot_id = websocket.query_params.get("robot_id")
     broker = get_ws_broker()
     try:
-        client_id = await broker.connect(websocket, token=token, station_id=station_id)
+        client_id = await broker.connect(websocket, token=token, station_id=station_id, robot_id=robot_id)
     except WebSocketBrokerError:
         return
 

@@ -66,6 +66,7 @@ async def monitor_env(monkeypatch: pytest.MonkeyPatch):
         database=database,
         poll_interval_seconds=0.01,
         persist_telemetry=True,
+        robot_id="robot-1",
     )
     yield monitor, sdk_adapter, database, event_bus, state_monitor_module
     await monitor.stop()
@@ -125,6 +126,43 @@ def test_invalid_poll_interval_rejected() -> None:
         StateMonitor(sdk_adapter=FakeSDKAdapter(), database=FakeDatabase(), poll_interval_seconds=0)
 
 
+def test_constructor_accepts_robot_id() -> None:
+    from quadruped.state_monitor import StateMonitor
+
+    monitor = StateMonitor(
+        sdk_adapter=FakeSDKAdapter(),
+        database=FakeDatabase(),
+        poll_interval_seconds=0.01,
+        robot_id="robot-7",
+    )
+
+    assert monitor.robot_id == "robot-7"
+
+
+def test_constructor_rejects_empty_robot_id() -> None:
+    from quadruped.state_monitor import StateMonitor, StateMonitorError
+
+    with pytest.raises(StateMonitorError, match="robot_id"):
+        StateMonitor(
+            sdk_adapter=FakeSDKAdapter(),
+            database=FakeDatabase(),
+            poll_interval_seconds=0.01,
+            robot_id="",
+        )
+
+
+def test_default_robot_id_is_default() -> None:
+    from quadruped.state_monitor import StateMonitor
+
+    monitor = StateMonitor(
+        sdk_adapter=FakeSDKAdapter(),
+        database=FakeDatabase(),
+        poll_interval_seconds=0.01,
+    )
+
+    assert monitor.robot_id == "default"
+
+
 @pytest.mark.asyncio
 async def test_poll_once_updates_current_state(monitor_env) -> None:
     monitor, _, _, _, _ = monitor_env
@@ -153,6 +191,7 @@ async def test_poll_once_publishes_telemetry_event(monitor_env) -> None:
 
     assert len(received) == 1
     assert received[0]["battery_pct"] == 100
+    assert received[0]["robot_id"] == "robot-1"
 
 
 @pytest.mark.asyncio
@@ -198,7 +237,7 @@ async def test_connection_lost_and_restored_events(monitor_env) -> None:
     received = []
 
     async def callback(event):
-        received.append(event.name)
+        received.append((event.name, event.payload))
 
     event_bus.subscribe(EventName.QUADRUPED_CONNECTION_LOST, callback)
     event_bus.subscribe(EventName.QUADRUPED_CONNECTION_RESTORED, callback)
@@ -224,11 +263,12 @@ async def test_connection_lost_and_restored_events(monitor_env) -> None:
     await monitor.poll_once()
     await event_bus.wait_until_idle(timeout=0.5)
 
-    assert received == [
+    assert [event_name for event_name, _ in received] == [
         EventName.QUADRUPED_CONNECTION_RESTORED,
         EventName.QUADRUPED_CONNECTION_LOST,
         EventName.QUADRUPED_CONNECTION_RESTORED,
     ]
+    assert all(payload["robot_id"] == "robot-1" for _, payload in received)
 
 
 @pytest.mark.asyncio
@@ -330,6 +370,48 @@ async def test_battery_recharged_resets_flags(monitor_env) -> None:
         EventName.BATTERY_RECHARGED,
         EventName.BATTERY_WARN,
     ]
+
+
+@pytest.mark.asyncio
+async def test_battery_events_include_robot_id(monitor_env) -> None:
+    from core.event_bus import EventName
+
+    monitor, sdk_adapter, _, event_bus, _ = monitor_env
+    received = []
+
+    async def callback(event):
+        received.append((event.name, event.payload))
+
+    event_bus.subscribe(EventName.BATTERY_WARN, callback)
+    event_bus.subscribe(EventName.BATTERY_CRITICAL, callback)
+    event_bus.subscribe(EventName.BATTERY_RECHARGED, callback)
+
+    sdk_adapter.snapshot = QuadrupedTelemetrySnapshot(
+        battery_pct=20,
+        position=(1.0, 2.0, 0.0),
+        rpy=(0.0, 0.0, 0.1),
+        control_mode=0,
+        connection_ok=True,
+        mode=QuadrupedMode.STANDING,
+    )
+    await monitor.poll_once()
+    sdk_adapter.snapshot = QuadrupedTelemetrySnapshot(
+        battery_pct=95,
+        position=(1.0, 2.0, 0.0),
+        rpy=(0.0, 0.0, 0.1),
+        control_mode=0,
+        connection_ok=True,
+        mode=QuadrupedMode.STANDING,
+    )
+    await monitor.poll_once()
+    await event_bus.wait_until_idle(timeout=0.5)
+
+    assert [event_name for event_name, _ in received] == [
+        EventName.BATTERY_WARN,
+        EventName.BATTERY_CRITICAL,
+        EventName.BATTERY_RECHARGED,
+    ]
+    assert all(payload["robot_id"] == "robot-1" for _, payload in received)
 
 
 @pytest.mark.asyncio

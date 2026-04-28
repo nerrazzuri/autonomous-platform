@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robot Provisioning</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: oklch(0.16 0.01 240);
+      --bg-top: oklch(0.2 0.018 230);
+      --panel: oklch(0.24 0.012 236 / 0.96);
+      --panel-strong: oklch(0.29 0.014 232 / 0.98);
+      --panel-soft: oklch(0.21 0.012 240 / 0.9);
+      --line: oklch(0.41 0.015 232 / 0.72);
+      --text: oklch(0.95 0.007 240);
+      --muted: oklch(0.77 0.01 236);
+      --accent: oklch(0.76 0.1 220);
+      --accent-strong: oklch(0.67 0.11 220);
+      --success: oklch(0.8 0.14 150);
+      --warning: oklch(0.82 0.14 88);
+      --danger: oklch(0.68 0.18 28);
+      --danger-strong: oklch(0.62 0.19 28);
+      --shadow: 0 24px 52px rgba(3, 8, 18, 0.32);
+      --radius: 24px;
+      --radius-sm: 16px;
+      --transition: 180ms cubic-bezier(0.22, 1, 0.36, 1);
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(65, 124, 199, 0.2), transparent 28%),
+        radial-gradient(circle at top right, rgba(205, 113, 50, 0.12), transparent 24%),
+        linear-gradient(180deg, var(--bg-top), var(--bg));
+      padding: 22px;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.28;
+      background:
+        linear-gradient(rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.025)) 0 0 / 100% 1px,
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.02)) 0 0 / 1px 100%;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.45), transparent 88%);
+    }
+
+    .shell {
+      width: min(1440px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: center;
+      padding: 24px;
+      background:
+        linear-gradient(135deg, rgba(71, 132, 215, 0.16), transparent 40%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
+        var(--panel-strong);
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 8px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 3vw, 2.8rem);
+      line-height: 1;
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 70ch;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .status-pill,
+    .nav-link {
+      min-height: 54px;
+      padding: 0 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 999px;
+      background: rgba(11, 17, 28, 0.46);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: var(--text);
+      text-decoration: none;
+      transition: transform var(--transition), border-color var(--transition), background-color var(--transition);
+    }
+
+    .nav-link:hover,
+    .nav-link:focus-visible {
+      transform: translateY(-1px);
+      border-color: rgba(126, 178, 235, 0.4);
+      background: rgba(48, 82, 126, 0.26);
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: var(--muted);
+      box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.04);
+      transition: background-color var(--transition), transform var(--transition);
+    }
+
+    .status-pill[data-tone="success"] .status-dot {
+      background: var(--success);
+      transform: scale(1.08);
+    }
+
+    .status-pill[data-tone="warning"] .status-dot {
+      background: var(--warning);
+    }
+
+    .status-pill[data-tone="danger"] .status-dot {
+      background: var(--danger);
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .toolbar-note,
+    .card {
+      padding: 22px;
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .toolbar-note {
+      background: var(--panel-soft);
+    }
+
+    .toolbar-note strong {
+      font-size: 1rem;
+    }
+
+    .toolbar-note span {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: stretch;
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      min-height: 58px;
+      padding: 14px 18px;
+      border-radius: 18px;
+      color: var(--text);
+      font: inherit;
+      font-size: 0.98rem;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      transition:
+        transform var(--transition),
+        box-shadow var(--transition),
+        background-color var(--transition),
+        opacity var(--transition);
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 3px solid rgba(126, 178, 235, 0.7);
+      outline-offset: 3px;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+      color: oklch(0.18 0.015 220);
+      box-shadow: 0 16px 34px rgba(68, 119, 183, 0.24);
+    }
+
+    .btn-danger {
+      background: linear-gradient(180deg, var(--danger), var(--danger-strong));
+      color: oklch(0.97 0.004 35);
+      box-shadow: 0 16px 34px rgba(177, 68, 45, 0.24);
+    }
+
+    .btn-muted {
+      background: rgba(87, 114, 149, 0.18);
+      border: 1px solid rgba(108, 148, 196, 0.28);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .card-kicker {
+      color: var(--muted);
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .card-title {
+      margin-top: 4px;
+      font-size: 1.08rem;
+      letter-spacing: 0.02em;
+    }
+
+    .card-subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .scan-grid,
+    .status-grid,
+    .robot-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .scan-grid {
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .robot-grid {
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+
+    .network-card,
+    .robot-card,
+    .status-card {
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      display: grid;
+      gap: 10px;
+    }
+
+    .network-card.is-robot-ap {
+      background: rgba(62, 108, 168, 0.18);
+      border-color: rgba(126, 178, 235, 0.3);
+    }
+
+    .network-card button,
+    .robot-card button {
+      min-height: 44px;
+      padding: 10px 14px;
+      font-size: 0.92rem;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.8rem;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+    }
+
+    .pill.success {
+      background: rgba(44, 131, 92, 0.22);
+      border-color: rgba(90, 198, 144, 0.32);
+    }
+
+    .pill.warning {
+      background: rgba(174, 118, 26, 0.22);
+      border-color: rgba(245, 182, 72, 0.28);
+    }
+
+    .pill.danger {
+      background: rgba(160, 58, 38, 0.24);
+      border-color: rgba(234, 109, 86, 0.3);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .form-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .form-field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    input,
+    select {
+      min-height: 52px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 0 14px;
+      background: rgba(11, 17, 28, 0.42);
+      color: var(--text);
+      font: inherit;
+    }
+
+    input::placeholder {
+      color: rgba(224, 231, 241, 0.42);
+    }
+
+    .status-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .status-value,
+    .robot-value,
+    .network-value {
+      font-size: 0.96rem;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .meta-label {
+      color: var(--muted);
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .message-strip {
+      min-height: 54px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      display: grid;
+      align-items: center;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .message-strip.success {
+      background: rgba(44, 131, 92, 0.18);
+      border-color: rgba(90, 198, 144, 0.28);
+    }
+
+    .message-strip.warning {
+      background: rgba(174, 118, 26, 0.18);
+      border-color: rgba(245, 182, 72, 0.24);
+    }
+
+    .message-strip.danger {
+      background: rgba(160, 58, 38, 0.22);
+      border-color: rgba(234, 109, 86, 0.26);
+    }
+
+    .empty-note {
+      padding: 18px;
+      border-radius: 18px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px dashed rgba(255, 255, 255, 0.08);
+      line-height: 1.45;
+    }
+
+    .robot-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .robot-card-fields,
+    .network-meta {
+      display: grid;
+      gap: 8px;
+    }
+
+    .helper-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    @media (max-width: 1080px) {
+      .grid,
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 780px) {
+      body {
+        padding: 14px;
+      }
+
+      .hero {
+        display: grid;
+      }
+
+      .hero-meta {
+        justify-content: flex-start;
+      }
+
+      .form-grid,
+      .status-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="panel hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Sumitomo Factory Logistics</p>
+        <h1>Robot Provisioning</h1>
+        <p class="subtitle">Guide first-time robot setup from the browser: scan visible WiFi networks, connect the robot to factory WiFi, watch provisioning progress, and maintain the saved robot list without touching the terminal.</p>
+      </div>
+      <div class="hero-meta">
+        <div class="status-pill" id="auth-pill" data-tone="warning">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="auth-text">Token missing</span>
+        </div>
+        <a class="nav-link" id="supervisor-link" href="/ui/supervisor.html">
+          Back To Supervisor
+        </a>
+      </div>
+    </section>
+
+    <section class="toolbar">
+      <div class="panel toolbar-note">
+        <strong id="headline-note">Supervisor token is required for provisioning actions.</strong>
+        <span id="subheadline-note">Open this page with <code>/ui/provision.html?token=&lt;supervisor-token&gt;</code>. Passwords are only sent to the provisioning API and are never shown back in job status.</span>
+      </div>
+      <div class="panel toolbar-note">
+        <strong>Provisioning Flow</strong>
+        <span>1. Scan WiFi and choose the robot AP. 2. Enter factory WiFi details. 3. Start provisioning and wait for the job to finish. 4. Confirm the robot appears in the provisioned robot list.</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="stack">
+        <article class="panel card">
+          <div class="card-head">
+            <div>
+              <div class="card-kicker">WiFi Scan</div>
+              <h2 class="card-title">Scan WiFi / Robot APs</h2>
+            </div>
+            <button type="button" class="btn-primary" id="scan-button">Scan WiFi / Robot APs</button>
+          </div>
+          <p class="card-subtitle">Robot APs are highlighted automatically. Click one to fill the Robot AP SSID field in the form.</p>
+          <div class="message-strip" id="scan-message">No scan has been run yet.</div>
+          <div class="scan-grid" id="scan-results"></div>
+        </article>
+
+        <article class="panel card">
+          <div class="card-head">
+            <div>
+              <div class="card-kicker">Provisioning Form</div>
+              <h2 class="card-title">Start Robot Provisioning</h2>
+            </div>
+          </div>
+          <form id="provision-form">
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="dog_ap_ssid">Robot AP SSID</label>
+                <input id="dog_ap_ssid" name="dog_ap_ssid" type="text" required placeholder="D1-Ultra:aa:bb:cc:dd:ee">
+              </div>
+              <div class="form-field">
+                <label for="target_wifi_ssid">Factory WiFi SSID</label>
+                <input id="target_wifi_ssid" name="target_wifi_ssid" type="text" required placeholder="FACTORY_WIFI">
+              </div>
+              <div class="form-field">
+                <label for="target_wifi_password">Factory WiFi Password</label>
+                <input id="target_wifi_password" name="target_wifi_password" type="password" required placeholder="Enter factory WiFi password">
+              </div>
+              <div class="form-field">
+                <label for="role">Role</label>
+                <select id="role" name="role" required>
+                  <option value="logistics">logistics</option>
+                  <option value="patrol">patrol</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="robot_id">Robot ID</label>
+                <input id="robot_id" name="robot_id" type="text" placeholder="logistics_01">
+              </div>
+              <div class="form-field">
+                <label for="display_name">Display Name</label>
+                <input id="display_name" name="display_name" type="text" placeholder="Logistics Robot 1">
+              </div>
+              <div class="form-field">
+                <label for="pc_wifi_iface">PC WiFi Interface</label>
+                <input id="pc_wifi_iface" name="pc_wifi_iface" type="text" value="wlan0" placeholder="wlan0">
+              </div>
+              <div class="form-field">
+                <label for="ssh_user">SSH User</label>
+                <input id="ssh_user" name="ssh_user" type="text" value="firefly" placeholder="firefly">
+              </div>
+              <div class="form-field">
+                <label for="ssh_password">SSH Password</label>
+                <input id="ssh_password" name="ssh_password" type="password" placeholder="Optional SSH password">
+              </div>
+              <div class="form-field">
+                <label for="sdk_lib_path">SDK Lib Path</label>
+                <input id="sdk_lib_path" name="sdk_lib_path" type="text" value="sdk/zsl-1" placeholder="sdk/zsl-1">
+              </div>
+              <div class="form-field full">
+                <div class="helper-row">
+                  <button type="submit" class="btn-primary" id="start-button">Start Provisioning</button>
+                  <button type="button" class="btn-muted" id="reset-button">Start Another Robot</button>
+                </div>
+              </div>
+            </div>
+          </form>
+        </article>
+      </div>
+
+      <div class="stack">
+        <article class="panel card">
+          <div class="card-head">
+            <div>
+              <div class="card-kicker">Provisioning Job</div>
+              <h2 class="card-title">Job Status</h2>
+            </div>
+          </div>
+          <div class="message-strip" id="job-message">No provisioning job is active.</div>
+          <div class="status-grid" id="job-status-grid"></div>
+        </article>
+
+        <article class="panel card">
+          <div class="card-head">
+            <div>
+              <div class="card-kicker">Provisioned Robots</div>
+              <h2 class="card-title">Saved Robot Records</h2>
+            </div>
+            <button type="button" class="btn-muted" id="refresh-robots-button">Refresh Robots</button>
+          </div>
+          <div class="message-strip" id="robots-message">Loading provisioned robot records.</div>
+          <div class="robot-grid" id="provisioned-robots"></div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const state = {
+        token: "",
+        hasToken: false,
+        activeJobId: null,
+        statusPollTimer: null,
+        jobRunning: false,
+        scanLoading: false,
+        robotsLoading: false
+      };
+
+      const elements = {
+        authPill: document.getElementById("auth-pill"),
+        authText: document.getElementById("auth-text"),
+        headlineNote: document.getElementById("headline-note"),
+        subheadlineNote: document.getElementById("subheadline-note"),
+        supervisorLink: document.getElementById("supervisor-link"),
+        scanButton: document.getElementById("scan-button"),
+        scanMessage: document.getElementById("scan-message"),
+        scanResults: document.getElementById("scan-results"),
+        provisionForm: document.getElementById("provision-form"),
+        startButton: document.getElementById("start-button"),
+        resetButton: document.getElementById("reset-button"),
+        refreshRobotsButton: document.getElementById("refresh-robots-button"),
+        jobMessage: document.getElementById("job-message"),
+        jobStatusGrid: document.getElementById("job-status-grid"),
+        robotsMessage: document.getElementById("robots-message"),
+        provisionedRobots: document.getElementById("provisioned-robots"),
+        dogApSsid: document.getElementById("dog_ap_ssid"),
+        targetWifiSsid: document.getElementById("target_wifi_ssid"),
+        targetWifiPassword: document.getElementById("target_wifi_password"),
+        role: document.getElementById("role"),
+        robotId: document.getElementById("robot_id"),
+        displayName: document.getElementById("display_name"),
+        pcWifiIface: document.getElementById("pc_wifi_iface"),
+        sshUser: document.getElementById("ssh_user"),
+        sshPassword: document.getElementById("ssh_password"),
+        sdkLibPath: document.getElementById("sdk_lib_path")
+      };
+
+      init();
+
+      function init() {
+        bootstrapFromQuery();
+        bindEvents();
+        renderInitialState();
+        loadProvisionedRobots();
+      }
+
+      function bootstrapFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        state.token = (params.get("token") || "").trim();
+        state.hasToken = Boolean(state.token);
+        updateSupervisorLink();
+
+        if (state.hasToken) {
+          setAuthState("Supervisor token loaded", "success");
+          elements.headlineNote.textContent = "Provisioning controls are ready.";
+          elements.subheadlineNote.textContent = "This page uses the supervisor token from the URL query string and never shows the WiFi password after submission.";
+          return;
+        }
+
+        setAuthState("Token missing", "danger");
+        elements.headlineNote.textContent = "Supervisor token is required for provisioning actions.";
+        elements.subheadlineNote.textContent = "Open this page with /ui/provision.html?token=<supervisor-token> before scanning or starting provisioning jobs.";
+      }
+
+      function bindEvents() {
+        elements.scanButton.addEventListener("click", runScan);
+        elements.provisionForm.addEventListener("submit", handleProvisionSubmit);
+        elements.resetButton.addEventListener("click", resetProvisionFlow);
+        elements.refreshRobotsButton.addEventListener("click", loadProvisionedRobots);
+      }
+
+      function renderInitialState() {
+        setScanMessage("No scan has been run yet.", "warning");
+        setJobMessage("No provisioning job is active.", "warning");
+        setRobotsMessage("Loading provisioned robot records.", "warning");
+        updateActionState();
+      }
+
+      function updateSupervisorLink() {
+        const url = new URL("/ui/supervisor.html", window.location.origin);
+        if (state.hasToken) {
+          url.searchParams.set("token", state.token);
+        }
+        elements.supervisorLink.href = url.pathname + url.search;
+      }
+
+      function buildApiUrl(path) {
+        return path;
+      }
+
+      function buildHeaders() {
+        const headers = {
+          "Content-Type": "application/json"
+        };
+        if (state.hasToken) {
+          headers.Authorization = "Bearer " + state.token;
+        }
+        return headers;
+      }
+
+      async function apiRequest(path, options) {
+        const response = await fetch(buildApiUrl(path), options || {});
+        let payload = null;
+        try {
+          payload = await response.json();
+        } catch (_error) {
+          payload = null;
+        }
+        if (!response.ok) {
+          const detail = payload && payload.detail ? payload.detail : "Request failed.";
+          throw new Error(detail);
+        }
+        return payload;
+      }
+
+      function setAuthState(text, tone) {
+        elements.authPill.dataset.tone = tone;
+        elements.authText.textContent = text;
+      }
+
+      function setScanMessage(message, tone) {
+        elements.scanMessage.textContent = message;
+        elements.scanMessage.className = "message-strip " + (tone || "");
+      }
+
+      function setJobMessage(message, tone) {
+        elements.jobMessage.textContent = message;
+        elements.jobMessage.className = "message-strip " + (tone || "");
+      }
+
+      function setRobotsMessage(message, tone) {
+        elements.robotsMessage.textContent = message;
+        elements.robotsMessage.className = "message-strip " + (tone || "");
+      }
+
+      function updateActionState() {
+        const controlsDisabled = !state.hasToken || state.jobRunning;
+        elements.scanButton.disabled = !state.hasToken || state.scanLoading;
+        elements.startButton.disabled = controlsDisabled;
+        elements.resetButton.disabled = state.jobRunning;
+        elements.refreshRobotsButton.disabled = !state.hasToken || state.robotsLoading || state.jobRunning;
+      }
+
+      function ensureToken() {
+        if (!state.hasToken) {
+          throw new Error("Supervisor token missing. Reopen this page with ?token=<supervisor-token>.");
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function formatValue(value, fallback) {
+        if (value === null || value === undefined || value === "") {
+          return fallback || "-";
+        }
+        return String(value);
+      }
+
+      function statusTone(status) {
+        if (status === "succeeded") {
+          return "success";
+        }
+        if (status === "failed") {
+          return "danger";
+        }
+        return "warning";
+      }
+
+      async function runScan() {
+        try {
+          ensureToken();
+          state.scanLoading = true;
+          updateActionState();
+          setScanMessage("Scanning visible WiFi networks...", "warning");
+          const networks = await apiRequest("/provision/scan", {
+            method: "GET",
+            headers: buildHeaders()
+          });
+          renderScanResults(Array.isArray(networks) ? networks : []);
+        } catch (error) {
+          renderScanResults([]);
+          setScanMessage(error.message || "WiFi scan failed.", "danger");
+        } finally {
+          state.scanLoading = false;
+          updateActionState();
+        }
+      }
+
+      function renderScanResults(networks) {
+        if (!networks.length) {
+          elements.scanResults.innerHTML = "<div class=\"empty-note\">No WiFi networks were returned. Try scanning again once the workstation WiFi interface is ready.</div>";
+          setScanMessage("No WiFi networks found.", "warning");
+          return;
+        }
+
+        elements.scanResults.innerHTML = networks.map(function (network) {
+          const robotTone = network.is_robot_ap ? "success" : "warning";
+          const robotBadge = network.is_robot_ap ? "<span class=\"pill success\">Robot AP</span>" : "<span class=\"pill warning\">WiFi</span>";
+          return ""
+            + "<article class=\"network-card" + (network.is_robot_ap ? " is-robot-ap" : "") + "\">"
+            +   "<div class=\"network-meta\">"
+            +     "<div class=\"meta-label\">SSID</div>"
+            +     "<div class=\"network-value\">" + escapeHtml(formatValue(network.ssid, "Hidden SSID")) + "</div>"
+            +     "<div class=\"helper-row\">"
+            +       robotBadge
+            +       "<span class=\"pill " + robotTone + "\">Signal " + escapeHtml(formatValue(network.signal, "?")) + "</span>"
+            +       "<span class=\"pill\">" + escapeHtml(formatValue(network.security, "Open")) + "</span>"
+            +     "</div>"
+            +   "</div>"
+            +   "<button type=\"button\" class=\"btn-muted\" data-network-ssid=\"" + escapeHtml(formatValue(network.ssid, "")) + "\" data-is-robot-ap=\"" + (network.is_robot_ap ? "true" : "false") + "\">Use This Network</button>"
+            + "</article>";
+        }).join("");
+
+        setScanMessage("WiFi scan complete. Select a robot AP or enter one manually.", "success");
+
+        Array.from(elements.scanResults.querySelectorAll("button[data-network-ssid]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            const ssid = button.getAttribute("data-network-ssid") || "";
+            const isRobotAp = button.getAttribute("data-is-robot-ap") === "true";
+            if (isRobotAp) {
+              elements.dogApSsid.value = ssid;
+              setScanMessage("Robot AP SSID copied into the form.", "success");
+            } else {
+              elements.targetWifiSsid.value = ssid;
+              setScanMessage("Factory WiFi SSID copied into the form.", "success");
+            }
+          });
+        });
+      }
+
+      async function handleProvisionSubmit(event) {
+        event.preventDefault();
+        try {
+          ensureToken();
+          state.jobRunning = true;
+          updateActionState();
+          clearStatusPolling();
+          setJobMessage("Submitting provisioning request...", "warning");
+
+          const payload = {
+            dog_ap_ssid: elements.dogApSsid.value.trim(),
+            target_wifi_ssid: elements.targetWifiSsid.value.trim(),
+            target_wifi_password: elements.targetWifiPassword.value,
+            role: elements.role.value,
+            robot_id: optionalValue(elements.robotId.value),
+            display_name: optionalValue(elements.displayName.value),
+            pc_wifi_iface: optionalValue(elements.pcWifiIface.value),
+            ssh_user: optionalValue(elements.sshUser.value) || "firefly",
+            ssh_password: optionalValue(elements.sshPassword.value),
+            sdk_lib_path: optionalValue(elements.sdkLibPath.value) || "sdk/zsl-1"
+          };
+
+          const response = await apiRequest("/provision/start", {
+            method: "POST",
+            headers: buildHeaders(),
+            body: JSON.stringify(payload)
+          });
+
+          elements.targetWifiPassword.value = "";
+          elements.sshPassword.value = "";
+
+          state.activeJobId = response.job_id;
+          renderJobStatus({
+            job_id: response.job_id,
+            status: response.status,
+            message: "Provisioning queued"
+          });
+          startStatusPolling(response.job_id);
+        } catch (error) {
+          state.jobRunning = false;
+          updateActionState();
+          setJobMessage(error.message || "Failed to start provisioning.", "danger");
+        }
+      }
+
+      function optionalValue(value) {
+        const trimmed = String(value || "").trim();
+        return trimmed || null;
+      }
+
+      function renderJobStatus(job) {
+        const status = formatValue(job.status, "queued");
+        setJobMessage(formatValue(job.message, "Provisioning job in progress."), statusTone(status));
+        elements.jobStatusGrid.innerHTML = [
+          statusItem("Job ID", formatValue(job.job_id, "-")),
+          statusItem("Status", status),
+          statusItem("Robot ID", formatValue(job.robot_id, "-")),
+          statusItem("Robot MAC", formatValue(job.dog_mac, "-")),
+          statusItem("Robot IP", formatValue(job.dog_ip, "-"))
+        ].join("");
+      }
+
+      function statusItem(label, value) {
+        return ""
+          + "<div class=\"status-card\">"
+          +   "<div class=\"meta-label\">" + escapeHtml(label) + "</div>"
+          +   "<div class=\"status-value\">" + escapeHtml(value) + "</div>"
+          + "</div>";
+      }
+
+      function startStatusPolling(jobId) {
+        clearStatusPolling();
+        pollJobStatus(jobId);
+        state.statusPollTimer = window.setInterval(function () {
+          pollJobStatus(jobId);
+        }, 2000);
+      }
+
+      async function pollJobStatus(jobId) {
+        try {
+          const statusBody = await apiRequest("/provision/status/" + encodeURIComponent(jobId), {
+            method: "GET",
+            headers: buildHeaders()
+          });
+          renderJobStatus(statusBody);
+          if (statusBody.status === "succeeded" || statusBody.status === "failed") {
+            clearStatusPolling();
+            state.jobRunning = false;
+            updateActionState();
+            if (statusBody.status === "succeeded") {
+              loadProvisionedRobots();
+            }
+          }
+        } catch (error) {
+          clearStatusPolling();
+          state.jobRunning = false;
+          updateActionState();
+          setJobMessage(error.message || "Failed to poll provisioning status.", "danger");
+        }
+      }
+
+      function clearStatusPolling() {
+        if (state.statusPollTimer) {
+          window.clearInterval(state.statusPollTimer);
+          state.statusPollTimer = null;
+        }
+      }
+
+      async function loadProvisionedRobots() {
+        try {
+          ensureToken();
+          state.robotsLoading = true;
+          updateActionState();
+          setRobotsMessage("Loading provisioned robot records...", "warning");
+          const robots = await apiRequest("/provision/robots", {
+            method: "GET",
+            headers: buildHeaders()
+          });
+          renderProvisionedRobots(Array.isArray(robots) ? robots : []);
+        } catch (error) {
+          elements.provisionedRobots.innerHTML = "<div class=\"empty-note\">Unable to load provisioned robots right now.</div>";
+          setRobotsMessage(error.message || "Failed to load provisioned robots.", "danger");
+        } finally {
+          state.robotsLoading = false;
+          updateActionState();
+        }
+      }
+
+      function renderProvisionedRobots(robots) {
+        if (!robots.length) {
+          elements.provisionedRobots.innerHTML = "<div class=\"empty-note\">No provisioned robots are saved yet. Start a provisioning job to create the first robot record.</div>";
+          setRobotsMessage("No provisioned robots found.", "warning");
+          return;
+        }
+
+        elements.provisionedRobots.innerHTML = robots.map(function (robot) {
+          const enabledTone = robot.enabled ? "success" : "warning";
+          return ""
+            + "<article class=\"robot-card\">"
+            +   "<div class=\"robot-card-head\">"
+            +     "<div>"
+            +       "<div class=\"meta-label\">Robot ID</div>"
+            +       "<div class=\"robot-value\">" + escapeHtml(formatValue(robot.robot_id, "unknown")) + "</div>"
+            +     "</div>"
+            +     "<span class=\"pill " + enabledTone + "\">" + escapeHtml(robot.enabled ? "Enabled" : "Disabled") + "</span>"
+            +   "</div>"
+            +   "<div class=\"robot-card-fields\">"
+            +     fieldRow("Display Name", formatValue(robot.display_name, "-"))
+            +     fieldRow("MAC", formatValue(robot.mac, "-"))
+            +     fieldRow("Quadruped IP", formatValue(robot.quadruped_ip, "unknown"))
+            +     fieldRow("Role", formatValue(robot.role, "-"))
+            +   "</div>"
+            +   "<button type=\"button\" class=\"btn-danger\" data-remove-robot-id=\"" + escapeHtml(formatValue(robot.robot_id, "")) + "\">Remove Robot</button>"
+            + "</article>";
+        }).join("");
+
+        setRobotsMessage("Provisioned robot records are up to date.", "success");
+
+        Array.from(elements.provisionedRobots.querySelectorAll("button[data-remove-robot-id]")).forEach(function (button) {
+          button.addEventListener("click", function () {
+            const robotId = button.getAttribute("data-remove-robot-id") || "";
+            removeProvisionedRobot(robotId);
+          });
+        });
+      }
+
+      function fieldRow(label, value) {
+        return ""
+          + "<div>"
+          +   "<div class=\"meta-label\">" + escapeHtml(label) + "</div>"
+          +   "<div class=\"robot-value\">" + escapeHtml(value) + "</div>"
+          + "</div>";
+      }
+
+      async function removeProvisionedRobot(robotId) {
+        if (!robotId) {
+          return;
+        }
+        if (!window.confirm("Remove robot record " + robotId + "? This only affects future startups.")) {
+          return;
+        }
+        try {
+          ensureToken();
+          setRobotsMessage("Removing robot record " + robotId + "...", "warning");
+          await apiRequest("/provision/robots/" + encodeURIComponent(robotId), {
+            method: "DELETE",
+            headers: buildHeaders()
+          });
+          setRobotsMessage("Robot record removed.", "success");
+          loadProvisionedRobots();
+        } catch (error) {
+          setRobotsMessage(error.message || "Failed to remove robot record.", "danger");
+        }
+      }
+
+      function resetProvisionFlow() {
+        clearStatusPolling();
+        state.activeJobId = null;
+        state.jobRunning = false;
+        updateActionState();
+        elements.provisionForm.reset();
+        elements.pcWifiIface.value = "wlan0";
+        elements.sshUser.value = "firefly";
+        elements.sdkLibPath.value = "sdk/zsl-1";
+        setJobMessage("No provisioning job is active.", "warning");
+        elements.jobStatusGrid.innerHTML = "";
+      }
+    })();
+  </script>
+</body>
+</html>

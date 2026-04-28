@@ -12,6 +12,7 @@ from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.navigation.route_store import RouteDefinition, RouteStore, Waypoint, get_route_store
 from shared.quadruped.heartbeat import HeartbeatController, get_heartbeat_controller
+from shared.quadruped.sdk_adapter import SDKAdapter
 from shared.quadruped.state_monitor import QuadrupedState, StateMonitor, get_state_monitor
 
 
@@ -67,11 +68,14 @@ class Navigator:
         waypoint_tolerance_m: float | None = None,
         heading_tolerance_deg: float | None = None,
         obstacle_hold_timeout_seconds: float | None = None,
+        sdk_adapter: SDKAdapter | None = None,
+        robot_id: str = "default",
     ) -> None:
         config = get_config()
         self._route_store = route_store or get_route_store()
         self._state_monitor = state_monitor or get_state_monitor()
         self._heartbeat = heartbeat or get_heartbeat_controller()
+        self._sdk_adapter = sdk_adapter
         self._waypoint_tolerance_m = (
             waypoint_tolerance_m if waypoint_tolerance_m is not None else config.navigation.waypoint_tolerance_m
         )
@@ -89,7 +93,10 @@ class Navigator:
             raise NavigatorError("heading_tolerance_deg must be > 0")
         if self._obstacle_hold_timeout_seconds <= 0:
             raise NavigatorError("obstacle_hold_timeout_seconds must be > 0")
+        if not isinstance(robot_id, str) or not robot_id.strip():
+            raise NavigatorError("robot_id must be a non-empty string")
 
+        self.robot_id = robot_id
         self._navigation_lock = asyncio.Lock()
         self._is_navigating = False
         self._current_route_id: str | None = None
@@ -379,10 +386,14 @@ class Navigator:
     async def _handle_human_confirmation(self, event: Any) -> None:
         if not self._is_navigating:
             return
+        if not self._event_is_for_this_robot(event):
+            return
         self._hold_event.set()
 
     async def _handle_obstacle_detected(self, event: Any) -> None:
         if not self._is_navigating:
+            return
+        if not self._event_is_for_this_robot(event):
             return
         if not self._blocked:
             self._blocked = True
@@ -392,6 +403,8 @@ class Navigator:
 
     async def _handle_obstacle_cleared(self, event: Any) -> None:
         if not self._is_navigating or not self._blocked:
+            return
+        if not self._event_is_for_this_robot(event):
             return
         self._blocked = False
         self._blocked_started_at = None
@@ -413,6 +426,15 @@ class Navigator:
         if self._cancelled:
             raise NavigationCancelledError(self._cancel_reason)
 
+    def _event_is_for_this_robot(self, event: Any) -> bool:
+        payload = getattr(event, "payload", None)
+        if not isinstance(payload, dict):
+            return True
+        event_robot_id = payload.get("robot_id")
+        if event_robot_id is None:
+            return True
+        return event_robot_id == self.robot_id
+
     def _publish_waypoint_arrival(
         self,
         route: RouteDefinition,
@@ -433,7 +455,9 @@ class Navigator:
 
     def _publish_event(self, event_name: EventName, payload: dict[str, Any], *, task_id: str | None = None) -> None:
         try:
-            get_event_bus().publish_nowait(event_name, payload=payload, source=__name__, task_id=task_id)
+            enriched_payload = dict(payload)
+            enriched_payload["robot_id"] = self.robot_id
+            get_event_bus().publish_nowait(event_name, payload=enriched_payload, source=__name__, task_id=task_id)
         except asyncio.QueueFull:
             logger.warning("Navigator event bus queue full", extra={"event_name": event_name.value})
         except Exception:

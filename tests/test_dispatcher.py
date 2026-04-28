@@ -124,6 +124,7 @@ class FakeNavigator:
 
         self.busy = False
         self.calls: list[tuple[str, str, str | None]] = []
+        self.cancel_calls: list[str] = []
         self.release_event: asyncio.Event | None = None
         self.started_event = asyncio.Event()
         self.on_execute = None
@@ -152,6 +153,11 @@ class FakeNavigator:
         finally:
             self.busy = False
 
+    async def cancel_navigation(self, reason: str = "cancelled"):
+        self.cancel_calls.append(reason)
+        if self.release_event is not None:
+            self.release_event.set()
+
 
 class FakeStateMonitor:
     def __init__(self, state=None, poll_state=None):
@@ -176,6 +182,31 @@ class FakeStationProvider:
         if station is None:
             raise LookupError(f"station not found: {station_id}")
         return station
+
+
+class FakeRobotRegistry:
+    def __init__(self, platforms: list[object] | None = None):
+        self._platforms = {platform.robot_id: platform for platform in platforms or []}
+
+    def get(self, robot_id: str):
+        from shared.quadruped.robot_registry import RobotNotFoundError
+
+        try:
+            return self._platforms[robot_id]
+        except KeyError as exc:
+            raise RobotNotFoundError(f"Robot '{robot_id}' is not registered") from exc
+
+    def all(self):
+        return list(self._platforms.values())
+
+
+def make_robot_platform(robot_id: str, *, navigator: FakeNavigator | None = None, state_monitor: FakeStateMonitor | None = None):
+    return SimpleNamespace(
+        robot_id=robot_id,
+        navigator=navigator or FakeNavigator(),
+        state_monitor=state_monitor or FakeStateMonitor(state=make_state()),
+        config=SimpleNamespace(connection=SimpleNamespace(robot_id=robot_id)),
+    )
 
 
 @pytest_asyncio.fixture
@@ -575,6 +606,229 @@ async def test_dispatcher_clears_active_state_after_finish(dispatcher_env) -> No
     assert state.active_route_origin is None
     assert state.active_route_destination is None
     assert queue.tasks[task.id].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_two_idle_robots_dispatch_two_different_tasks(dispatcher_env) -> None:
+    dispatcher_module, event_bus = dispatcher_env
+    queue = FakeTaskQueue()
+    task_a = queue.add_task(make_task_record("task-a", station_id="A", destination_id="QA"))
+    task_b = queue.add_task(make_task_record("task-b", station_id="B", destination_id="QB"))
+    robot_01_nav = FakeNavigator()
+    robot_02_nav = FakeNavigator()
+    robot_01_nav.release_event = asyncio.Event()
+    robot_02_nav.release_event = asyncio.Event()
+    registry = FakeRobotRegistry(
+        [
+            make_robot_platform("robot_01", navigator=robot_01_nav),
+            make_robot_platform("robot_02", navigator=robot_02_nav),
+        ]
+    )
+    legacy_navigator = FakeNavigator()
+    dispatcher = dispatcher_module.Dispatcher(
+        task_queue=queue,
+        navigator=legacy_navigator,
+        state_monitor=FakeStateMonitor(state=make_state()),
+        robot_registry=registry,
+        poll_interval_seconds=10.0,
+    )
+
+    await dispatcher.start()
+    await event_bus.publish("quadruped.idle", {"robot_id": "robot_01"})
+    await event_bus.publish("quadruped.idle", {"robot_id": "robot_02"})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await robot_01_nav.started_event.wait()
+    await robot_02_nav.started_event.wait()
+
+    assert robot_01_nav.calls == [("A", "QA", task_a.id)]
+    assert robot_02_nav.calls == [("B", "QB", task_b.id)]
+    assert legacy_navigator.calls == []
+    assert dispatcher._active_tasks == {"robot_01": task_a.id, "robot_02": task_b.id}
+
+    robot_01_nav.release_event.set()
+    robot_02_nav.release_event.set()
+    await asyncio.gather(*dispatcher._dispatch_tasks.values())
+    await dispatcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_completion_for_robot_01_does_not_affect_robot_02(dispatcher_env) -> None:
+    dispatcher_module, event_bus = dispatcher_env
+    queue = FakeTaskQueue()
+    task_a = queue.add_task(make_task_record("task-a"))
+    task_b = queue.add_task(make_task_record("task-b", station_id="B", destination_id="QB"))
+    robot_01_nav = FakeNavigator()
+    robot_02_nav = FakeNavigator()
+    robot_01_nav.release_event = asyncio.Event()
+    robot_02_nav.release_event = asyncio.Event()
+    registry = FakeRobotRegistry(
+        [
+            make_robot_platform("robot_01", navigator=robot_01_nav),
+            make_robot_platform("robot_02", navigator=robot_02_nav),
+        ]
+    )
+    dispatcher = dispatcher_module.Dispatcher(
+        task_queue=queue,
+        navigator=FakeNavigator(),
+        state_monitor=FakeStateMonitor(state=make_state()),
+        robot_registry=registry,
+        poll_interval_seconds=10.0,
+    )
+
+    await dispatcher.start()
+    await event_bus.publish("quadruped.idle", {"robot_id": "robot_01"})
+    await event_bus.publish("quadruped.idle", {"robot_id": "robot_02"})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await robot_01_nav.started_event.wait()
+    await robot_02_nav.started_event.wait()
+
+    robot_01_nav.release_event.set()
+    await dispatcher._dispatch_tasks["robot_01"]
+
+    assert "robot_01" not in dispatcher._active_tasks
+    assert dispatcher._active_tasks["robot_02"] == task_b.id
+    assert queue.tasks[task_a.id].status == "completed"
+
+    robot_02_nav.release_event.set()
+    await dispatcher._dispatch_tasks["robot_02"]
+    await dispatcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_failure_for_robot_02_does_not_affect_robot_01(dispatcher_env) -> None:
+    dispatcher_module, event_bus = dispatcher_env
+    queue = FakeTaskQueue()
+    task_a = queue.add_task(make_task_record("task-a"))
+    task_b = queue.add_task(make_task_record("task-b", station_id="B", destination_id="QB"))
+    robot_01_nav = FakeNavigator()
+    robot_02_nav = FakeNavigator()
+    robot_01_nav.release_event = asyncio.Event()
+    robot_02_nav.result = replace(robot_02_nav.result, success=False, message="route failure")
+    registry = FakeRobotRegistry(
+        [
+            make_robot_platform("robot_01", navigator=robot_01_nav),
+            make_robot_platform("robot_02", navigator=robot_02_nav),
+        ]
+    )
+    dispatcher = dispatcher_module.Dispatcher(
+        task_queue=queue,
+        navigator=FakeNavigator(),
+        state_monitor=FakeStateMonitor(state=make_state()),
+        robot_registry=registry,
+        poll_interval_seconds=10.0,
+    )
+
+    await dispatcher.start()
+    await event_bus.publish("quadruped.idle", {"robot_id": "robot_01"})
+    await event_bus.publish("quadruped.idle", {"robot_id": "robot_02"})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await robot_01_nav.started_event.wait()
+    await robot_02_nav.started_event.wait()
+    await dispatcher._dispatch_tasks["robot_02"]
+
+    assert dispatcher._active_tasks["robot_01"] == task_a.id
+    assert "robot_02" not in dispatcher._active_tasks
+    assert queue.tasks[task_b.id].status == "failed"
+    assert queue.tasks[task_b.id].notes == "route failure"
+
+    robot_01_nav.release_event.set()
+    await dispatcher._dispatch_tasks["robot_01"]
+    await dispatcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_unknown_robot_id_event_is_ignored_safely(dispatcher_env) -> None:
+    dispatcher_module, event_bus = dispatcher_env
+    queue = FakeTaskQueue()
+    task = queue.add_task(make_task_record("task-a"))
+    robot_01_nav = FakeNavigator()
+    robot_01_nav.release_event = asyncio.Event()
+    registry = FakeRobotRegistry([make_robot_platform("robot_01", navigator=robot_01_nav)])
+    dispatcher = dispatcher_module.Dispatcher(
+        task_queue=queue,
+        navigator=FakeNavigator(),
+        state_monitor=FakeStateMonitor(state=make_state()),
+        robot_registry=registry,
+        poll_interval_seconds=10.0,
+    )
+
+    await dispatcher.start()
+    await event_bus.publish("quadruped.idle", {"robot_id": "robot_01"})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await robot_01_nav.started_event.wait()
+
+    await event_bus.publish(
+        "quadruped.arrived_at_waypoint",
+        {"robot_id": "robot_999", "task_id": task.id, "hold": True},
+        task_id=task.id,
+    )
+    await event_bus.wait_until_idle(timeout=1.0)
+
+    assert dispatcher._active_tasks == {"robot_01": task.id}
+    assert queue.tasks[task.id].status == "dispatched"
+
+    robot_01_nav.release_event.set()
+    await dispatcher._dispatch_tasks["robot_01"]
+    await dispatcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_legacy_no_robot_id_idle_event_still_works(dispatcher_env) -> None:
+    dispatcher_module, event_bus = dispatcher_env
+    queue = FakeTaskQueue()
+    task = queue.add_task(make_task_record("task-1"))
+    navigator = FakeNavigator()
+    navigator.release_event = asyncio.Event()
+    dispatcher = dispatcher_module.Dispatcher(
+        task_queue=queue,
+        navigator=navigator,
+        state_monitor=FakeStateMonitor(state=make_state()),
+        robot_registry=FakeRobotRegistry(),
+        poll_interval_seconds=10.0,
+    )
+
+    dispatcher._subscribe_events()
+    await event_bus.publish("quadruped.idle", {})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await navigator.started_event.wait()
+
+    assert navigator.calls == [("A", "QA", task.id)]
+    assert dispatcher._active_tasks == {"default": task.id}
+
+    dispatch_task = dispatcher._dispatch_tasks["default"]
+    navigator.release_event.set()
+    await dispatch_task
+    dispatcher._unsubscribe_events()
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_uses_per_robot_navigator(dispatcher_env) -> None:
+    dispatcher_module, event_bus = dispatcher_env
+    queue = FakeTaskQueue()
+    task = queue.add_task(make_task_record("task-1"))
+    robot_02_nav = FakeNavigator()
+    robot_02_nav.release_event = asyncio.Event()
+    registry = FakeRobotRegistry([make_robot_platform("robot_02", navigator=robot_02_nav)])
+    legacy_navigator = FakeNavigator()
+    dispatcher = dispatcher_module.Dispatcher(
+        task_queue=queue,
+        navigator=legacy_navigator,
+        state_monitor=FakeStateMonitor(state=make_state()),
+        robot_registry=registry,
+        poll_interval_seconds=10.0,
+    )
+
+    await dispatcher.start()
+    await event_bus.publish("quadruped.idle", {"robot_id": "robot_02"})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await robot_02_nav.started_event.wait()
+
+    assert robot_02_nav.calls == [("A", "QA", task.id)]
+    assert legacy_navigator.calls == []
+
+    robot_02_nav.release_event.set()
+    await dispatcher._dispatch_tasks["robot_02"]
+    await dispatcher.stop()
 
 
 def test_global_get_dispatcher_returns_dispatcher() -> None:

@@ -215,6 +215,144 @@
       gap: 18px;
     }
 
+    .fleet-panel {
+      padding: 22px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .fleet-toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .fleet-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 14px;
+    }
+
+    .fleet-card {
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.035);
+      display: grid;
+      gap: 14px;
+      transition: border-color var(--transition), transform var(--transition), background-color var(--transition);
+    }
+
+    .fleet-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(128, 191, 244, 0.34);
+    }
+
+    .fleet-card.is-selected {
+      background: rgba(90, 149, 222, 0.14);
+      border-color: rgba(128, 191, 244, 0.5);
+      box-shadow: inset 0 0 0 1px rgba(128, 191, 244, 0.12);
+    }
+
+    .fleet-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .fleet-name {
+      display: grid;
+      gap: 4px;
+    }
+
+    .fleet-id {
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .fleet-display {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .fleet-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .fleet-field {
+      padding: 12px 13px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      display: grid;
+      gap: 4px;
+    }
+
+    .fleet-label {
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .fleet-value {
+      font-size: 0.94rem;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .fleet-card-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .fleet-card-actions button {
+      min-height: 54px;
+      padding: 12px 14px;
+      font-size: 0.92rem;
+    }
+
+    .detail-card {
+      padding: 22px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .detail-item {
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      display: grid;
+      gap: 6px;
+    }
+
+    .detail-label {
+      color: var(--muted);
+      font-size: 0.76rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .detail-value {
+      font-size: 1rem;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
     .card {
       padding: 22px;
       display: grid;
@@ -353,6 +491,10 @@
       padding: 0;
     }
 
+    .map-shell {
+      position: relative;
+    }
+
     .map-head {
       padding: 18px 22px 0;
     }
@@ -369,6 +511,48 @@
       border: 1px solid rgba(121, 149, 185, 0.15);
     }
 
+    .fleet-map-layer {
+      position: absolute;
+      inset: 16px 18px 18px;
+      pointer-events: none;
+    }
+
+    .fleet-map-marker {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      display: grid;
+      gap: 4px;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .fleet-map-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      background: var(--info);
+      border: 2px solid rgba(255, 255, 255, 0.94);
+      box-shadow: 0 0 0 7px rgba(115, 219, 255, 0.16);
+    }
+
+    .fleet-map-marker.is-selected .fleet-map-dot {
+      background: var(--warning);
+      box-shadow: 0 0 0 8px rgba(240, 189, 92, 0.18);
+    }
+
+    .fleet-map-caption {
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(9, 15, 25, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
     .empty {
       color: var(--muted);
       padding: 8px 0;
@@ -379,6 +563,10 @@
       .status-grid,
       .controls-panel {
         grid-template-columns: 1fr;
+      }
+
+      .detail-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
 
@@ -397,6 +585,12 @@
       .button-grid,
       .summary-grid {
         grid-template-columns: 1fr 1fr;
+      }
+
+      .fleet-fields,
+      .fleet-card-actions,
+      .detail-grid {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -437,6 +631,24 @@
         <button class="btn-danger control-button" id="estop-button" type="button">E-Stop<span class="btn-note">Force passive mode</span></button>
         <button class="btn-muted control-button" id="estop-release-button" type="button">Release E-Stop<span class="btn-note">Request stand up</span></button>
       </div>
+    </section>
+
+    <section class="panel fleet-panel">
+      <div class="fleet-toolbar">
+        <div>
+          <p class="eyebrow">Fleet</p>
+          <h2>Patrol Robot Fleet</h2>
+        </div>
+        <button class="btn-muted" id="fleet-show-all-button" type="button">Show All<span class="btn-note">Reset robot filter</span></button>
+      </div>
+      <div class="fleet-grid" id="fleet-grid"></div>
+      <article class="detail-card">
+        <div>
+          <p class="eyebrow">Selected Robot</p>
+          <h3 id="selected-robot-title">No robot selected</h3>
+        </div>
+        <div class="detail-grid" id="selected-robot-details"></div>
+      </article>
     </section>
 
     <section class="summary-grid">
@@ -506,7 +718,10 @@
         <h2>Patrol Floor Map</h2>
       </div>
       <div class="map-stage">
-        <div id="floormap"></div>
+        <div class="map-shell">
+          <div id="floormap"></div>
+          <div class="fleet-map-layer" id="fleet-map-layer" aria-hidden="true"></div>
+        </div>
       </div>
     </section>
   </div>
@@ -523,10 +738,15 @@
       var resumeButton = document.getElementById("resume-button");
       var estopButton = document.getElementById("estop-button");
       var estopReleaseButton = document.getElementById("estop-release-button");
+      var fleetShowAllButton = document.getElementById("fleet-show-all-button");
       var messageTitle = document.getElementById("message-title");
       var messageText = document.getElementById("message-text");
       var connectionText = document.getElementById("connection-text");
       var connectionDot = document.getElementById("connection-dot");
+      var fleetGrid = document.getElementById("fleet-grid");
+      var selectedRobotTitle = document.getElementById("selected-robot-title");
+      var selectedRobotDetails = document.getElementById("selected-robot-details");
+      var fleetMapLayer = document.getElementById("fleet-map-layer");
 
       var state = {
         routes: [],
@@ -534,11 +754,14 @@
         zones: [],
         anomalies: [],
         latestCycles: [],
+        fleet: [],
+        selectedRobotId: null,
         patrolStatus: null,
         telemetry: null,
         lastObservation: null,
         socket: null,
         reconnectTimer: null,
+        refreshTimer: null,
         map: null
       };
 
@@ -565,7 +788,8 @@
           suspendButton,
           resumeButton,
           estopButton,
-          estopReleaseButton
+          estopReleaseButton,
+          fleetShowAllButton
         ].forEach(function (button) {
           button.disabled = disabled;
         });
@@ -618,21 +842,161 @@
         return route.name + " (" + route.id + ")";
       }
 
+      function syncFocusedTelemetry() {
+        var robot = getFocusedRobot();
+        if (!robot) {
+          return;
+        }
+        state.telemetry = {
+          battery_pct: robot.battery_pct,
+          position: robot.position ? [robot.position.x, robot.position.y, robot.position.z == null ? 0 : robot.position.z] : null,
+          control_mode: robot.mode,
+          connection_ok: robot.connected,
+          mode: robot.mode == null ? null : "mode " + robot.mode
+        };
+      }
+
+      function renderFleet() {
+        renderFleetCards();
+        renderSelectedRobotDetails();
+        renderFleetMapMarkers();
+      }
+
+      function renderFleetCards() {
+        if (!state.fleet.length) {
+          fleetGrid.innerHTML = "<div class=\"empty\">No patrol robots are currently registered.</div>";
+          return;
+        }
+
+        fleetGrid.innerHTML = state.fleet.map(function (robot) {
+          var selectedClass = robot.robot_id === state.selectedRobotId ? " is-selected" : "";
+          return "<article class=\"fleet-card" + selectedClass + "\">"
+            + "<div class=\"fleet-card-head\">"
+            + "<div class=\"fleet-name\">"
+            + "<div class=\"fleet-id\">" + escapeHtml(robot.robot_id || "unknown") + "</div>"
+            + "<div class=\"fleet-display\">" + escapeHtml(robot.display_name || "Unnamed robot") + "</div>"
+            + "</div>"
+            + "<span class=\"" + severityBadgeClass(robot.connected === false ? "critical" : robot.connected === true ? "info" : "warning") + "\">"
+            + escapeHtml(robot.connected === true ? "online" : robot.connected === false ? "offline" : "unknown")
+            + "</span>"
+            + "</div>"
+            + "<div class=\"fleet-fields\">"
+            + fleetField("Battery", robot.battery_pct == null ? "-" : robot.battery_pct + "%")
+            + fleetField("Mode", robot.mode == null ? "unknown" : String(robot.mode))
+            + fleetField("Cycle", robot.active_cycle_id || "idle")
+            + fleetField("Route", robot.active_route_id || "idle")
+            + fleetField("Position", formatRobotPosition(robot.position))
+            + fleetField("Role", robot.role || "patrol")
+            + "</div>"
+            + "<div class=\"fleet-card-actions\">"
+            + "<button class=\"btn-muted\" type=\"button\" data-select-robot=\"" + escapeHtml(robot.robot_id || "") + "\">Select</button>"
+            + "<button class=\"btn-danger\" type=\"button\" data-robot-estop=\"" + escapeHtml(robot.robot_id || "") + "\">E-Stop</button>"
+            + "<button class=\"btn-primary\" type=\"button\" data-robot-release=\"" + escapeHtml(robot.robot_id || "") + "\">Release</button>"
+            + "</div>"
+            + "</article>";
+        }).join("");
+
+        Array.prototype.forEach.call(fleetGrid.querySelectorAll("[data-select-robot]"), function (button) {
+          button.addEventListener("click", function () {
+            state.selectedRobotId = button.getAttribute("data-select-robot") || null;
+            syncFocusedTelemetry();
+            renderFleet();
+            updateStatusBar();
+            updateCyclePanel();
+            updateTelemetryCard();
+            renderAnomalies();
+          });
+        });
+
+        Array.prototype.forEach.call(fleetGrid.querySelectorAll("[data-robot-estop]"), function (button) {
+          button.addEventListener("click", function () {
+            triggerRobotEstop(button.getAttribute("data-robot-estop"));
+          });
+        });
+
+        Array.prototype.forEach.call(fleetGrid.querySelectorAll("[data-robot-release]"), function (button) {
+          button.addEventListener("click", function () {
+            triggerRobotRelease(button.getAttribute("data-robot-release"));
+          });
+        });
+      }
+
+      function renderSelectedRobotDetails() {
+        var robot = getFocusedRobot();
+        if (!robot) {
+          selectedRobotTitle.textContent = "No robot selected";
+          selectedRobotDetails.innerHTML = "<div class=\"empty\">Choose a patrol robot to focus the status and anomaly feed.</div>";
+          return;
+        }
+
+        selectedRobotTitle.textContent = (robot.display_name || robot.robot_id || "Robot") + " · " + (robot.robot_id || "unknown");
+        selectedRobotDetails.innerHTML = [
+          detailItem("Connection", robot.connected === true ? "Online" : robot.connected === false ? "Offline" : "unknown"),
+          detailItem("Battery", robot.battery_pct == null ? "-" : robot.battery_pct + "%"),
+          detailItem("Mode", robot.mode == null ? "unknown" : String(robot.mode)),
+          detailItem("Active Cycle", robot.active_cycle_id || "idle"),
+          detailItem("Active Route", robot.active_route_id || "idle"),
+          detailItem("Position", formatRobotPosition(robot.position)),
+          detailItem("Display Name", robot.display_name || "-"),
+          detailItem("Filter", state.selectedRobotId ? "Filtered" : "Show all")
+        ].join("");
+      }
+
+      function fleetField(label, value) {
+        return "<div class=\"fleet-field\"><div class=\"fleet-label\">" + escapeHtml(label) + "</div><div class=\"fleet-value\">" + escapeHtml(value) + "</div></div>";
+      }
+
+      function detailItem(label, value) {
+        return "<div class=\"detail-item\"><div class=\"detail-label\">" + escapeHtml(label) + "</div><div class=\"detail-value\">" + escapeHtml(value) + "</div></div>";
+      }
+
+      function formatRobotPosition(position) {
+        if (!position || position.x == null || position.y == null) {
+          return "unknown";
+        }
+        var zValue = position.z == null ? 0 : position.z;
+        return [position.x, position.y, zValue].map(function (item) {
+          return Number(item).toFixed(2);
+        }).join(", ");
+      }
+
+      function preserveSelectedRobot() {
+        if (state.selectedRobotId && !findRobot(state.selectedRobotId)) {
+          state.selectedRobotId = null;
+        }
+        if (!state.selectedRobotId && state.fleet.length === 1) {
+          state.selectedRobotId = state.fleet[0].robot_id;
+        }
+      }
+
+      function findRobot(robotId) {
+        return state.fleet.find(function (robot) {
+          return robot.robot_id === robotId;
+        }) || null;
+      }
+
+      function getFocusedRobot() {
+        return findRobot(state.selectedRobotId) || state.fleet[0] || null;
+      }
+
       function updateStatusBar() {
         var patrolStatus = state.patrolStatus || {};
+        var focusedRobot = getFocusedRobot();
+        var activeCycleId = focusedRobot && focusedRobot.active_cycle_id ? focusedRobot.active_cycle_id : patrolStatus.active_cycle_id;
+        var activeRouteId = focusedRobot && focusedRobot.active_route_id ? focusedRobot.active_route_id : patrolStatus.active_route_id;
         var suspended = Boolean(patrolStatus.dispatcher_suspended || patrolStatus.scheduler_suspended);
-        var active = Boolean(patrolStatus.active_cycle_id);
+        var active = Boolean(activeCycleId);
         var statusLabel = suspended ? "Suspended" : active ? "Active" : "Idle";
         var detail = suspended ? "Manual or safety suspension in effect" : active ? "Patrol cycle in progress" : "Waiting for next patrol";
 
         document.getElementById("patrol-state").textContent = statusLabel;
         document.getElementById("patrol-state-detail").textContent = detail;
-        document.getElementById("active-cycle").textContent = patrolStatus.active_cycle_id || "None";
-        document.getElementById("active-route").textContent = "Route: " + (patrolStatus.active_route_id || "None");
+        document.getElementById("active-cycle").textContent = activeCycleId || "None";
+        document.getElementById("active-route").textContent = "Route: " + (activeRouteId || "None");
         document.getElementById("failure-count").textContent = String(patrolStatus.consecutive_failures || 0);
         document.getElementById("scheduler-state").textContent = patrolStatus.scheduler_suspended ? "Scheduler suspended" : "Scheduler normal";
         document.getElementById("last-result").textContent = patrolStatus.last_result || "Unknown";
-        document.getElementById("cycle-route").textContent = routeName(patrolStatus.active_route_id);
+        document.getElementById("cycle-route").textContent = routeName(activeRouteId);
       }
 
       function updateTelemetryCard() {
@@ -652,7 +1016,10 @@
       }
 
       function updateCyclePanel() {
-        var activeId = state.patrolStatus && state.patrolStatus.active_cycle_id;
+        var focusedRobot = getFocusedRobot();
+        var activeId = focusedRobot && focusedRobot.active_cycle_id
+          ? focusedRobot.active_cycle_id
+          : state.patrolStatus && state.patrolStatus.active_cycle_id;
         var activeCycle = null;
         state.latestCycles.forEach(function (cycle) {
           if (cycle.cycle_id === activeId) {
@@ -684,7 +1051,12 @@
         var feed = document.getElementById("anomaly-feed");
         feed.innerHTML = "";
 
-        if (!state.anomalies.length) {
+        var focusedCycleId = getFocusedRobot() && getFocusedRobot().active_cycle_id;
+        var anomalies = state.selectedRobotId && focusedCycleId
+          ? state.anomalies.filter(function (item) { return item.cycle_id === focusedCycleId; })
+          : state.anomalies;
+
+        if (!anomalies.length) {
           var empty = document.createElement("li");
           empty.className = "empty";
           empty.textContent = "No unresolved anomalies.";
@@ -692,7 +1064,7 @@
           return;
         }
 
-        state.anomalies.forEach(function (anomaly) {
+        anomalies.forEach(function (anomaly) {
           var item = document.createElement("li");
           item.className = "feed-item";
 
@@ -740,6 +1112,7 @@
         if (state.telemetry && state.telemetry.position) {
           state.map.updateRobotPosition(state.telemetry.position);
         }
+        renderFleetMapMarkers();
       }
 
       async function refreshData() {
@@ -749,6 +1122,7 @@
 
         try {
           var results = await Promise.all([
+            apiFetch("/robots"),
             apiFetch("/patrol/status"),
             apiFetch("/patrol/cycles?limit=20"),
             apiFetch("/patrol/anomalies?resolved=false"),
@@ -756,18 +1130,23 @@
             apiFetch("/patrol/zones")
           ]);
 
-          state.patrolStatus = results[0];
-          state.latestCycles = results[1];
-          state.anomalies = results[2];
-          state.routes = results[3];
-          state.zones = results[4];
+          state.fleet = results[0];
+          preserveSelectedRobot();
+          state.patrolStatus = results[1];
+          state.latestCycles = results[2];
+          state.anomalies = results[3];
+          state.routes = results[4];
+          state.zones = results[5];
           state.routeIndex = {};
           state.routes.forEach(function (route) {
             state.routeIndex[route.id] = route;
           });
 
+          syncFocusedTelemetry();
+          renderFleet();
           updateStatusBar();
           updateCyclePanel();
+          updateTelemetryCard();
           renderAnomalies();
           refreshMap();
           setMessage("Patrol data refreshed", "Supervisor dashboard synchronized with the patrol API.");
@@ -850,16 +1229,50 @@
         }
       }
 
+      async function triggerRobotEstop(robotId) {
+        if (!robotId) {
+          return;
+        }
+        try {
+          await apiFetch("/robots/" + encodeURIComponent(robotId) + "/estop", { method: "POST" });
+          setMessage("Emergency stop triggered", "Requested passive mode for " + robotId + ".");
+          await refreshData();
+        } catch (error) {
+          setMessage("Robot E-Stop failed", error.message);
+        }
+      }
+
+      async function triggerRobotRelease(robotId) {
+        if (!robotId) {
+          return;
+        }
+        try {
+          await apiFetch("/robots/" + encodeURIComponent(robotId) + "/estop/release", { method: "POST" });
+          setMessage("Emergency stop released", "Requested release for " + robotId + ".");
+          await refreshData();
+        } catch (error) {
+          setMessage("Robot release failed", error.message);
+        }
+      }
+
       function handleEvent(payload) {
         var eventName = payload.event_name;
         var eventPayload = payload.payload || {};
+        var eventRobotId = eventPayload.robot_id || null;
 
         if (eventName === "quadruped.telemetry") {
-          state.telemetry = eventPayload;
+          mergeFleetRobotUpdate(eventRobotId, {
+            connected: eventPayload.connection_ok,
+            battery_pct: eventPayload.battery_pct,
+            mode: eventPayload.control_mode,
+            position: normalizePositionObject(eventPayload.position)
+          });
+          syncFocusedTelemetry();
           updateTelemetryCard();
           if (eventPayload.position) {
             state.map.updateRobotPosition(eventPayload.position);
           }
+          renderFleet();
         }
 
         if (eventName === "patrol.waypoint.observed") {
@@ -885,8 +1298,10 @@
 
         if (eventName === "battery.warn" || eventName === "battery.critical" || eventName === "battery.recharged") {
           if (typeof eventPayload.battery_pct === "number") {
+            mergeFleetRobotUpdate(eventRobotId, { battery_pct: eventPayload.battery_pct });
             state.telemetry = Object.assign({}, state.telemetry || {}, eventPayload);
             updateTelemetryCard();
+            renderFleet();
           }
         }
 
@@ -919,6 +1334,96 @@
         ) {
           refreshData();
         }
+      }
+
+      function mergeFleetRobotUpdate(robotId, nextFields) {
+        if (!robotId) {
+          return;
+        }
+
+        var robot = findRobot(robotId);
+        if (!robot) {
+          return;
+        }
+
+        Object.keys(nextFields || {}).forEach(function (key) {
+          if (nextFields[key] !== undefined) {
+            robot[key] = nextFields[key];
+          }
+        });
+      }
+
+      function normalizePositionObject(position) {
+        if (Array.isArray(position) && position.length >= 2) {
+          return {
+            x: Number(position[0]),
+            y: Number(position[1]),
+            z: position.length > 2 ? Number(position[2]) : 0
+          };
+        }
+        if (position && typeof position === "object" && position.x != null && position.y != null) {
+          return {
+            x: Number(position.x),
+            y: Number(position.y),
+            z: position.z == null ? 0 : Number(position.z)
+          };
+        }
+        return null;
+      }
+
+      function renderFleetMapMarkers() {
+        if (!fleetMapLayer) {
+          return;
+        }
+
+        var robotsWithPosition = state.fleet.filter(function (robot) {
+          return robot.position && robot.position.x != null && robot.position.y != null;
+        });
+
+        if (!robotsWithPosition.length) {
+          fleetMapLayer.innerHTML = "";
+          return;
+        }
+
+        var bounds = {
+          minX: -10,
+          maxX: 20,
+          minY: -10,
+          maxY: 20
+        };
+
+        fleetMapLayer.innerHTML = robotsWithPosition.map(function (robot) {
+          var marker = markerPositionStyle(robot.position, bounds);
+          var selectedClass = robot.robot_id === state.selectedRobotId ? " is-selected" : "";
+          return "<div class=\"fleet-map-marker" + selectedClass + "\" style=\"left:" + marker.left + "%;top:" + marker.top + "%;\">"
+            + "<span class=\"fleet-map-dot\"></span>"
+            + "<span class=\"fleet-map-caption\">" + escapeHtml(robot.robot_id || "robot") + "</span>"
+            + "</div>";
+        }).join("");
+      }
+
+      function markerPositionStyle(position, bounds) {
+        var xValue = Number(position.x);
+        var yValue = Number(position.y);
+        var xRatio = clampRatio((xValue - bounds.minX) / (bounds.maxX - bounds.minX));
+        var yRatio = clampRatio((yValue - bounds.minY) / (bounds.maxY - bounds.minY));
+        return {
+          left: xRatio * 100,
+          top: (1 - yRatio) * 100
+        };
+      }
+
+      function clampRatio(value) {
+        return Math.min(Math.max(value, 0), 1);
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
       }
 
       function scheduleReconnect() {
@@ -991,6 +1496,15 @@
         resumeButton.addEventListener("click", resumePatrol);
         estopButton.addEventListener("click", triggerEstop);
         estopReleaseButton.addEventListener("click", releaseEstop);
+        fleetShowAllButton.addEventListener("click", function () {
+          state.selectedRobotId = null;
+          syncFocusedTelemetry();
+          renderFleet();
+          updateStatusBar();
+          updateCyclePanel();
+          updateTelemetryCard();
+          renderAnomalies();
+        });
       }
 
       function init() {
@@ -1006,6 +1520,7 @@
         setControlsDisabled(false);
         refreshData();
         connectSocket();
+        state.refreshTimer = window.setInterval(refreshData, 5000);
       }
 
       init();

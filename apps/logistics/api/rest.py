@@ -2,8 +2,11 @@ from __future__ import annotations
 
 """FastAPI REST surface for quadruped logistics operations."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
+import threading
+import uuid
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
@@ -17,6 +20,10 @@ from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.navigation.route_store import RouteDefinition, RouteNotFoundError, RouteStore, RouteStoreError, Waypoint, get_route_store
+from shared.provisioning import provision_backend
+from shared.provisioning.provision_backend import ProvisioningError
+from shared.provisioning.provision_models import ProvisionRequest, WifiNetwork
+from shared.quadruped.robot_registry import RobotNotFoundError, get_robot_registry
 from shared.quadruped.sdk_adapter import SDKAdapter, get_sdk_adapter
 from shared.quadruped.state_monitor import QuadrupedState, StateMonitor, get_state_monitor
 from apps.logistics.runtime.startup import shutdown_system, startup_system
@@ -32,6 +39,8 @@ from apps.logistics.tasks.queue import (
 
 logger = get_logger(__name__)
 EVENT_SOURCE = "api.rest"
+_PROVISIONING_JOBS: dict[str, dict[str, Any]] = {}
+_PROVISIONING_JOBS_LOCK = threading.Lock()
 
 
 class APIError(Exception):
@@ -87,6 +96,23 @@ class QuadrupedStatusResponse(BaseModel):
     active_task_id: str | None = None
 
 
+class PositionResponse(BaseModel):
+    x: float
+    y: float
+    z: float | None = None
+
+
+class RobotStatusResponse(BaseModel):
+    robot_id: str
+    display_name: str | None = None
+    role: str | None = None
+    connected: bool | None = None
+    battery_pct: int | None = None
+    position: PositionResponse | None = None
+    active_task_id: str | None = None
+    mode: int | None = None
+
+
 class RouteWaypointResponse(BaseModel):
     name: str
     x: float
@@ -120,6 +146,49 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class ProvisionScanResponse(BaseModel):
+    ssid: str
+    signal: int | None = None
+    security: str | None = None
+    is_robot_ap: bool = False
+
+
+class ProvisionStartRequest(BaseModel):
+    dog_ap_ssid: str
+    target_wifi_ssid: str
+    target_wifi_password: str
+    role: str
+    robot_id: str | None = None
+    display_name: str | None = None
+    pc_wifi_iface: str | None = None
+    ssh_user: str = "firefly"
+    ssh_password: str | None = None
+    sdk_lib_path: str = "sdk/zsl-1"
+
+
+class ProvisionJobResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+class ProvisionStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str | None = None
+    robot_id: str | None = None
+    dog_mac: str | None = None
+    dog_ip: str | None = None
+
+
+class ProvisionedRobotResponse(BaseModel):
+    robot_id: str
+    display_name: str | None = None
+    mac: str | None = None
+    quadruped_ip: str | None = None
+    role: str | None = None
+    enabled: bool | None = None
+
+
 def get_task_queue_dep() -> TaskQueue:
     return get_task_queue()
 
@@ -138,6 +207,100 @@ def get_sdk_adapter_dep() -> SDKAdapter:
 
 def get_route_store_dep() -> RouteStore:
     return get_route_store()
+
+
+def _get_provisioning_robots_yaml_path() -> Path:
+    return Path("data/robots.yaml")
+
+
+def _sanitize_provisioning_message(
+    message: str | None,
+    *,
+    target_wifi_password: str | None,
+    ssh_password: str | None,
+) -> str | None:
+    if message is None:
+        return None
+    sanitized = message
+    for secret in (target_wifi_password, ssh_password):
+        if secret:
+            sanitized = sanitized.replace(secret, "[redacted]")
+    return sanitized
+
+
+def _wifi_network_to_response(network: WifiNetwork) -> ProvisionScanResponse:
+    return ProvisionScanResponse(
+        ssid=network.ssid,
+        signal=network.signal,
+        security=network.security,
+        is_robot_ap=network.is_robot_ap,
+    )
+
+
+def _provision_job_snapshot(job_id: str) -> dict[str, Any]:
+    with _PROVISIONING_JOBS_LOCK:
+        job = _PROVISIONING_JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown job: {job_id}")
+        return dict(job)
+
+
+def _set_provision_job(job_id: str, **updates: Any) -> None:
+    with _PROVISIONING_JOBS_LOCK:
+        current = dict(_PROVISIONING_JOBS.get(job_id, {}))
+        current.update(updates)
+        _PROVISIONING_JOBS[job_id] = current
+
+
+def _run_provisioning_job(
+    job_id: str,
+    request: ProvisionRequest,
+    *,
+    display_name: str | None,
+    sdk_lib_path: str,
+    robots_yaml_path: Path,
+) -> None:
+    _set_provision_job(job_id, status="running", message="Provisioning started")
+    try:
+        result = provision_backend.provision_dog(request)
+        safe_message = _sanitize_provisioning_message(
+            result.message,
+            target_wifi_password=request.target_wifi_password,
+            ssh_password=request.ssh_password,
+        )
+        if not result.success:
+            _set_provision_job(
+                job_id,
+                status="failed",
+                message=safe_message or "Provisioning failed",
+                robot_id=result.robot_id,
+                dog_mac=result.dog_mac,
+                dog_ip=result.dog_ip,
+            )
+            return
+
+        entry = provision_backend.write_robot_entry(
+            result,
+            request.role,
+            robots_yaml_path,
+            display_name=display_name,
+            sdk_lib_path=sdk_lib_path,
+        )
+        _set_provision_job(
+            job_id,
+            status="succeeded",
+            message=safe_message or "Provisioning complete",
+            robot_id=entry.get("robot_id"),
+            dog_mac=entry.get("mac"),
+            dog_ip=entry.get("quadruped_ip"),
+        )
+    except Exception as exc:
+        safe_message = _sanitize_provisioning_message(
+            str(exc),
+            target_wifi_password=request.target_wifi_password,
+            ssh_password=request.ssh_password,
+        )
+        _set_provision_job(job_id, status="failed", message=safe_message or "Provisioning failed")
 
 
 def task_to_response(task: Any) -> TaskResponse:
@@ -193,6 +356,77 @@ def state_to_response(
         mode=state.mode.value,
         timestamp=state.timestamp.isoformat(),
         active_task_id=active_task_id,
+    )
+
+
+def _platform_role(platform: Any) -> str | None:
+    role = getattr(getattr(platform, "config", None), "role", None)
+    if role is None:
+        role = getattr(getattr(getattr(platform, "config", None), "connection", None), "role", None)
+    return role
+
+
+def _platform_matches_logistics_scope(platform: Any) -> bool:
+    role = _platform_role(platform)
+    return role in {None, "logistics"}
+
+
+def _scoped_registry_platforms() -> list[Any]:
+    return [platform for platform in get_robot_registry().all() if _platform_matches_logistics_scope(platform)]
+
+
+def _get_logistics_platform(robot_id: str) -> Any:
+    try:
+        platform = get_robot_registry().get(robot_id)
+    except RobotNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown robot: {robot_id}") from exc
+    if not _platform_matches_logistics_scope(platform):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown robot: {robot_id}")
+    return platform
+
+
+async def _load_platform_state(state_monitor: Any) -> QuadrupedState | None:
+    try:
+        state = await state_monitor.get_current_state()
+        if state is None:
+            state = await state_monitor.poll_once()
+        return state
+    except Exception:
+        logger.exception("REST platform status fetch failed")
+        return None
+
+
+async def _get_active_task_id_for_robot(dispatcher: Dispatcher, robot_id: str) -> str | None:
+    active_tasks = getattr(dispatcher, "_active_tasks", None)
+    if isinstance(active_tasks, dict):
+        if robot_id in active_tasks:
+            return active_tasks.get(robot_id)
+    try:
+        dispatch_state = await dispatcher.get_state()
+    except Exception as exc:
+        logger.warning("REST dispatcher status fetch failed", extra={"error": str(exc)})
+        return None
+    return getattr(dispatch_state, "active_task_id", None)
+
+
+def _position_response(state: QuadrupedState | None) -> PositionResponse | None:
+    if state is None or state.position is None:
+        return None
+    position = state.position
+    z_value = float(position[2]) if len(position) > 2 else None
+    return PositionResponse(x=float(position[0]), y=float(position[1]), z=z_value)
+
+
+def _robot_status_response(platform: Any, state: QuadrupedState | None, active_task_id: str | None) -> RobotStatusResponse:
+    return RobotStatusResponse(
+        robot_id=platform.robot_id,
+        display_name=getattr(getattr(platform, "config", None), "display_name", None),
+        role=_platform_role(platform),
+        connected=None if state is None else state.connection_ok,
+        battery_pct=None if state is None else state.battery_pct,
+        position=_position_response(state),
+        active_task_id=active_task_id,
+        mode=None if state is None else state.control_mode,
     )
 
 
@@ -304,6 +538,119 @@ def create_app() -> FastAPI:
     @application.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
         return HealthResponse(status="ok", service=config.app.name)
+
+    @application.get(
+        "/provision/scan",
+        response_model=list[ProvisionScanResponse],
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def provision_scan() -> list[ProvisionScanResponse]:
+        try:
+            networks = provision_backend.scan_wifi_networks()
+        except ProvisioningError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Provisioning WiFi scan failed")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Provisioning WiFi scan failed: {exc}",
+            ) from exc
+        return [_wifi_network_to_response(network) for network in networks]
+
+    @application.post(
+        "/provision/start",
+        response_model=ProvisionJobResponse,
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def provision_start(request: ProvisionStartRequest) -> ProvisionJobResponse:
+        try:
+            provision_request = ProvisionRequest(
+                dog_ap_ssid=request.dog_ap_ssid,
+                target_wifi_ssid=request.target_wifi_ssid,
+                target_wifi_password=request.target_wifi_password,
+                role=request.role,
+                pc_wifi_iface=request.pc_wifi_iface,
+                robot_id=request.robot_id,
+                ssh_user=request.ssh_user,
+                ssh_password=request.ssh_password,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        job_id = str(uuid.uuid4())
+        _set_provision_job(job_id, status="queued", message="Provisioning queued")
+        asyncio.create_task(
+            asyncio.to_thread(
+                _run_provisioning_job,
+                job_id,
+                provision_request,
+                display_name=request.display_name,
+                sdk_lib_path=request.sdk_lib_path,
+                robots_yaml_path=_get_provisioning_robots_yaml_path(),
+            )
+        )
+        return ProvisionJobResponse(job_id=job_id, status="queued")
+
+    @application.get(
+        "/provision/status/{job_id}",
+        response_model=ProvisionStatusResponse,
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def provision_status(job_id: str) -> ProvisionStatusResponse:
+        job = _provision_job_snapshot(job_id)
+        return ProvisionStatusResponse(
+            job_id=job_id,
+            status=job.get("status", "queued"),
+            message=job.get("message"),
+            robot_id=job.get("robot_id"),
+            dog_mac=job.get("dog_mac"),
+            dog_ip=job.get("dog_ip"),
+        )
+
+    @application.get(
+        "/provision/robots",
+        response_model=list[ProvisionedRobotResponse],
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def provision_robots() -> list[ProvisionedRobotResponse]:
+        try:
+            robots = provision_backend.list_robot_entries(_get_provisioning_robots_yaml_path())
+        except ProvisioningError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        return [
+            ProvisionedRobotResponse(
+                robot_id=str(robot.get("robot_id")),
+                display_name=robot.get("display_name"),
+                mac=robot.get("mac"),
+                quadruped_ip=robot.get("quadruped_ip"),
+                role=robot.get("role"),
+                enabled=robot.get("enabled"),
+            )
+            for robot in robots
+            if robot.get("robot_id") is not None
+        ]
+
+    @application.delete(
+        "/provision/robots/{robot_id}",
+        response_model=ProvisionedRobotResponse,
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def delete_provisioned_robot(robot_id: str) -> ProvisionedRobotResponse:
+        try:
+            removed = provision_backend.remove_robot_entry(robot_id, _get_provisioning_robots_yaml_path())
+        except ProvisioningError as exc:
+            error_text = str(exc)
+            if "Unknown robot_id" in error_text:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_text) from exc
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=error_text) from exc
+        return ProvisionedRobotResponse(
+            robot_id=str(removed.get("robot_id")),
+            display_name=removed.get("display_name"),
+            mac=removed.get("mac"),
+            quadruped_ip=removed.get("quadruped_ip"),
+            role=removed.get("role"),
+            enabled=removed.get("enabled"),
+        )
 
     @application.post(
         "/tasks",
@@ -443,20 +790,91 @@ def create_app() -> FastAPI:
         state_monitor: StateMonitor = Depends(get_state_monitor_dep),
         dispatcher: Dispatcher = Depends(get_dispatcher_dep),
     ) -> QuadrupedStatusResponse:
-        try:
-            state = await state_monitor.get_current_state()
-            if state is None:
-                state = await state_monitor.poll_once()
-        except Exception:
-            logger.exception("REST quadruped status fetch failed")
-            state = None
-        active_task_id: str | None = None
-        try:
-            dispatch_state = await dispatcher.get_state()
-            active_task_id = dispatch_state.active_task_id
-        except Exception as exc:
-            logger.warning("REST dispatcher status fetch failed", extra={"error": str(exc)})
+        scoped_platforms = _scoped_registry_platforms()
+        if scoped_platforms:
+            first_platform = scoped_platforms[0]
+            state = await _load_platform_state(first_platform.state_monitor)
+            active_task_id = await _get_active_task_id_for_robot(dispatcher, first_platform.robot_id)
+            return state_to_response(state, active_task_id=active_task_id)
+
+        state = await _load_platform_state(state_monitor)
+        active_task_id = await _get_active_task_id_for_robot(dispatcher, "default")
         return state_to_response(state, active_task_id=active_task_id)
+
+    @application.get(
+        "/robots",
+        response_model=list[RobotStatusResponse],
+        dependencies=[Depends(require_operator)],
+    )
+    async def list_robots(
+        dispatcher: Dispatcher = Depends(get_dispatcher_dep),
+    ) -> list[RobotStatusResponse]:
+        robots: list[RobotStatusResponse] = []
+        for platform in _scoped_registry_platforms():
+            state = await _load_platform_state(platform.state_monitor)
+            active_task_id = await _get_active_task_id_for_robot(dispatcher, platform.robot_id)
+            robots.append(_robot_status_response(platform, state, active_task_id))
+        return robots
+
+    @application.get(
+        "/robots/{robot_id}/status",
+        response_model=RobotStatusResponse,
+        dependencies=[Depends(require_operator)],
+    )
+    async def robot_status(
+        robot_id: str,
+        dispatcher: Dispatcher = Depends(get_dispatcher_dep),
+    ) -> RobotStatusResponse:
+        platform = _get_logistics_platform(robot_id)
+        state = await _load_platform_state(platform.state_monitor)
+        active_task_id = await _get_active_task_id_for_robot(dispatcher, robot_id)
+        return _robot_status_response(platform, state, active_task_id)
+
+    @application.post(
+        "/robots/{robot_id}/estop",
+        response_model=MessageResponse,
+        dependencies=[Depends(require_operator)],
+    )
+    async def robot_estop(robot_id: str) -> MessageResponse:
+        platform = _get_logistics_platform(robot_id)
+        sdk_adapter = getattr(platform, "sdk_adapter", None)
+        if sdk_adapter is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Robot SDK unavailable")
+        logger.warning("REST robot emergency stop requested", extra={"robot_id": robot_id})
+        try:
+            success = await sdk_adapter.passive()
+        except Exception as exc:
+            logger.exception("REST robot emergency stop failed", extra={"robot_id": robot_id})
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Quadruped emergency stop unavailable",
+            )
+        return MessageResponse(message="Emergency stop triggered")
+
+    @application.post(
+        "/robots/{robot_id}/estop/release",
+        response_model=MessageResponse,
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def robot_estop_release(robot_id: str) -> MessageResponse:
+        platform = _get_logistics_platform(robot_id)
+        sdk_adapter = getattr(platform, "sdk_adapter", None)
+        if sdk_adapter is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Robot SDK unavailable")
+        logger.info("REST robot emergency stop release requested", extra={"robot_id": robot_id})
+        try:
+            success = await sdk_adapter.stand_up()
+        except Exception as exc:
+            logger.exception("REST robot emergency stop release failed", extra={"robot_id": robot_id})
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Quadruped release unavailable",
+            )
+        return MessageResponse(message="Emergency stop released")
 
     @application.post(
         "/estop",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -115,7 +115,7 @@ async def test_cycle_completed_event_updates_timestamp(watchdog_module) -> None:
 async def test_stall_alert_after_3x_interval(watchdog_module) -> None:
     event_bus = FakeEventBus()
     watchdog = build_watchdog(watchdog_module, event_bus=event_bus, patrol_interval_seconds=10.0)
-    watchdog._last_cycle_completed_at = datetime.now(UTC) - timedelta(seconds=31)
+    watchdog._last_cycle_completed_at = datetime.now(timezone.utc) - timedelta(seconds=31)
 
     healthy = await watchdog.check_once()
     state = await watchdog.get_state()
@@ -129,7 +129,7 @@ async def test_stall_alert_after_3x_interval(watchdog_module) -> None:
 async def test_no_stall_alert_when_suspended(watchdog_module) -> None:
     watchdog = build_watchdog(watchdog_module)
     watchdog._suspended = True
-    watchdog._last_cycle_completed_at = datetime.now(UTC) - timedelta(seconds=100)
+    watchdog._last_cycle_completed_at = datetime.now(timezone.utc) - timedelta(seconds=100)
 
     assert await watchdog.check_once() is True
 

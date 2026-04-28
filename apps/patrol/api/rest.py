@@ -25,7 +25,9 @@ from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.navigation.route_store import RouteDefinition, RouteNotFoundError, RouteStore, RouteStoreError, Waypoint, get_route_store
+from shared.quadruped.robot_registry import RobotNotFoundError, get_robot_registry
 from shared.quadruped.sdk_adapter import SDKAdapter, get_sdk_adapter
+from shared.quadruped.state_monitor import QuadrupedState
 
 
 logger = get_logger(__name__)
@@ -134,6 +136,24 @@ class PatrolRouteUpsertRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class PositionResponse(BaseModel):
+    x: float
+    y: float
+    z: float | None = None
+
+
+class PatrolRobotStatusResponse(BaseModel):
+    robot_id: str
+    display_name: str | None = None
+    role: str | None = None
+    connected: bool | None = None
+    battery_pct: int | None = None
+    position: PositionResponse | None = None
+    active_cycle_id: str | None = None
+    active_route_id: str | None = None
+    mode: int | None = None
 
 
 def get_patrol_queue():
@@ -295,6 +315,79 @@ def _build_route_definition(request: PatrolRouteUpsertRequest) -> RouteDefinitio
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+def _platform_role(platform: Any) -> str | None:
+    role = getattr(getattr(platform, "config", None), "role", None)
+    if role is None:
+        role = getattr(getattr(getattr(platform, "config", None), "connection", None), "role", None)
+    return role
+
+
+def _platform_matches_patrol_scope(platform: Any) -> bool:
+    role = _platform_role(platform)
+    return role in {None, "patrol"}
+
+
+def _scoped_registry_platforms() -> list[Any]:
+    return [platform for platform in get_robot_registry().all() if _platform_matches_patrol_scope(platform)]
+
+
+def _get_patrol_platform(robot_id: str) -> Any:
+    try:
+        platform = get_robot_registry().get(robot_id)
+    except RobotNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown robot: {robot_id}") from exc
+    if not _platform_matches_patrol_scope(platform):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown robot: {robot_id}")
+    return platform
+
+
+async def _load_platform_state(state_monitor: Any) -> QuadrupedState | None:
+    try:
+        state = await state_monitor.get_current_state()
+        if state is None:
+            state = await state_monitor.poll_once()
+        return state
+    except Exception:
+        logger.exception("Patrol robot status fetch failed")
+        return None
+
+
+def _position_response(state: QuadrupedState | None) -> PositionResponse | None:
+    if state is None or state.position is None:
+        return None
+    position = state.position
+    z_value = float(position[2]) if len(position) > 2 else None
+    return PositionResponse(x=float(position[0]), y=float(position[1]), z=z_value)
+
+
+def _active_cycle_for_robot(dispatcher: PatrolDispatcher, robot_id: str) -> tuple[str | None, str | None]:
+    active_cycles = getattr(dispatcher, "_active_cycles", None)
+    active_routes = getattr(dispatcher, "_active_routes", None)
+    cycle_id = active_cycles.get(robot_id) if isinstance(active_cycles, dict) else None
+    route_id = active_routes.get(robot_id) if isinstance(active_routes, dict) else None
+    return cycle_id, route_id
+
+
+def _robot_status_response(
+    platform: Any,
+    state: QuadrupedState | None,
+    *,
+    active_cycle_id: str | None,
+    active_route_id: str | None,
+) -> PatrolRobotStatusResponse:
+    return PatrolRobotStatusResponse(
+        robot_id=platform.robot_id,
+        display_name=getattr(getattr(platform, "config", None), "display_name", None),
+        role=_platform_role(platform),
+        connected=None if state is None else state.connection_ok,
+        battery_pct=None if state is None else state.battery_pct,
+        position=_position_response(state),
+        active_cycle_id=active_cycle_id,
+        active_route_id=active_route_id,
+        mode=None if state is None else state.control_mode,
+    )
+
+
 def create_app() -> FastAPI:
     config = get_config()
     ui_directory = Path(__file__).resolve().parents[1] / "ui"
@@ -345,6 +438,47 @@ def create_app() -> FastAPI:
             consecutive_failures=int(dispatcher_state.consecutive_failures),
             watchdog_suspended=bool(watchdog_state.suspended),
             last_result=dispatcher_state.last_result,
+        )
+
+    @application.get(
+        "/robots",
+        response_model=list[PatrolRobotStatusResponse],
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def list_robots(
+        dispatcher: PatrolDispatcher = Depends(get_patrol_dispatcher_dep),
+    ) -> list[PatrolRobotStatusResponse]:
+        robots: list[PatrolRobotStatusResponse] = []
+        for platform in _scoped_registry_platforms():
+            state = await _load_platform_state(platform.state_monitor)
+            active_cycle_id, active_route_id = _active_cycle_for_robot(dispatcher, platform.robot_id)
+            robots.append(
+                _robot_status_response(
+                    platform,
+                    state,
+                    active_cycle_id=active_cycle_id,
+                    active_route_id=active_route_id,
+                )
+            )
+        return robots
+
+    @application.get(
+        "/robots/{robot_id}/status",
+        response_model=PatrolRobotStatusResponse,
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def robot_status(
+        robot_id: str,
+        dispatcher: PatrolDispatcher = Depends(get_patrol_dispatcher_dep),
+    ) -> PatrolRobotStatusResponse:
+        platform = _get_patrol_platform(robot_id)
+        state = await _load_platform_state(platform.state_monitor)
+        active_cycle_id, active_route_id = _active_cycle_for_robot(dispatcher, robot_id)
+        return _robot_status_response(
+            platform,
+            state,
+            active_cycle_id=active_cycle_id,
+            active_route_id=active_route_id,
         )
 
     @application.get(
@@ -524,6 +658,59 @@ def create_app() -> FastAPI:
         except Exception as exc:
             _raise_patrol_http_error(exc)
         return [zone_to_response(zone) for zone in zones]
+
+    @application.post(
+        "/robots/{robot_id}/estop",
+        response_model=MessageResponse,
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def robot_estop(robot_id: str) -> MessageResponse:
+        platform = _get_patrol_platform(robot_id)
+        sdk_adapter = getattr(platform, "sdk_adapter", None)
+        if sdk_adapter is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Robot SDK unavailable")
+        logger.warning("Patrol robot emergency stop requested", extra={"robot_id": robot_id})
+        try:
+            stopped = await sdk_adapter.passive()
+            if not stopped:
+                raise PatrolAPIError("Emergency stop unavailable")
+            await get_event_bus().publish(
+                EventName.ESTOP_TRIGGERED,
+                {"source": "patrol_api", "robot_id": robot_id},
+                source=EVENT_SOURCE,
+            )
+        except HTTPException:
+            raise
+        except PatrolAPIError as exc:
+            logger.warning("Patrol robot estop request failed", extra={"error": str(exc), "robot_id": robot_id})
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.warning("Patrol robot estop request failed", extra={"error": str(exc), "robot_id": robot_id})
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        return MessageResponse(message="Emergency stop triggered")
+
+    @application.post(
+        "/robots/{robot_id}/estop/release",
+        response_model=MessageResponse,
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def robot_estop_release(robot_id: str) -> MessageResponse:
+        platform = _get_patrol_platform(robot_id)
+        sdk_adapter = getattr(platform, "sdk_adapter", None)
+        if sdk_adapter is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Robot SDK unavailable")
+        logger.info("Patrol robot emergency stop release requested", extra={"robot_id": robot_id})
+        try:
+            released = await sdk_adapter.stand_up()
+            if not released:
+                raise PatrolAPIError("Emergency stop release unavailable")
+        except PatrolAPIError as exc:
+            logger.warning("Patrol robot estop release failed", extra={"error": str(exc), "robot_id": robot_id})
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.warning("Patrol robot estop release failed", extra={"error": str(exc), "robot_id": robot_id})
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        return MessageResponse(message="Emergency stop released")
 
     @application.post(
         "/estop",

@@ -20,6 +20,8 @@ def test_supervisor_html_exists_with_required_markers() -> None:
 
     assert "Patrol Supervisor Dashboard" in content
     assert "/ws" in content
+    assert "/robots" in content
+    assert "/robots/" in content
     assert "/patrol/status" in content
     assert "/patrol/cycles" in content
     assert "/patrol/anomalies" in content
@@ -28,6 +30,11 @@ def test_supervisor_html_exists_with_required_markers() -> None:
     assert "/patrol/resume" in content
     assert "/estop" in content
     assert "/estop/release" in content
+    assert "/robots/\" + encodeURIComponent(robotId) + \"/estop" in content
+    assert "/robots/\" + encodeURIComponent(robotId) + \"/estop/release" in content
+    assert "fleet-grid" in content
+    assert "selected-robot-details" in content
+    assert "fleet-map-layer" in content
     assert "floormap.js" in content
 
 
