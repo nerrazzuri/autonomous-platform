@@ -70,6 +70,27 @@ class FakeTaskQueue:
         return task
 
 
+class FakeRoute:
+    def __init__(self, route_id: str):
+        self.id = route_id
+
+
+class FakeLogisticsRouteStore:
+    def __init__(self):
+        self.routes = {
+            ("LINE_A", "QA"): FakeRoute("LINE_A_TO_QA"),
+            ("QA", "DOCK"): FakeRoute("RETURN_TO_DOCK"),
+        }
+
+    def validate_task_request(self, origin_id: str, destination_id: str, *, allow_placeholder: bool = True):
+        from apps.logistics.tasks.routes import RouteValidationError
+
+        try:
+            return self.routes[(origin_id, destination_id)]
+        except KeyError as exc:
+            raise RouteValidationError("Route not configured") from exc
+
+
 class FakeDispatcher:
     def __init__(self):
         self.pause_calls: list[str] = []
@@ -119,11 +140,14 @@ def hmi_client(monkeypatch: pytest.MonkeyPatch):
     queue = FakeTaskQueue()
     dispatcher = FakeDispatcher()
     event_bus = FakeEventBus()
+    route_store = FakeLogisticsRouteStore()
+    event_bus.route_store = route_store
 
     monkeypatch.setattr(auth_module, "get_config", lambda: config)
     monkeypatch.setattr(hmi_module, "get_task_queue_dep", lambda: queue)
     monkeypatch.setattr(hmi_module, "get_dispatcher_dep", lambda: dispatcher)
     monkeypatch.setattr(hmi_module, "get_event_bus", lambda: event_bus)
+    monkeypatch.setattr(hmi_module, "get_logistics_route_store_dep", lambda: route_store)
 
     app = FastAPI()
     app.include_router(hmi_module.create_hmi_router())
@@ -351,7 +375,7 @@ def test_hmi_request_task_creates_task(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json=hmi_payload(action="REQUEST_TASK", station_id="A", destination_id="QA"),
+        json=hmi_payload(action="REQUEST_TASK", station_id="LINE_A", destination_id="QA"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
@@ -363,6 +387,8 @@ def test_hmi_request_task_creates_task(hmi_client) -> None:
     assert body["task_id"] == "task-created"
     assert "queued" in body["message"]
     assert "task-created" in queue.tasks
+    assert queue.tasks["task-created"].station_id == "LINE_A"
+    assert queue.tasks["task-created"].destination_id == "QA"
 
 
 def test_hmi_request_task_missing_params_returns_422(hmi_client) -> None:
@@ -370,11 +396,56 @@ def test_hmi_request_task_missing_params_returns_422(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json=hmi_payload(action="REQUEST_TASK", station_id="A"),
+        json=hmi_payload(action="REQUEST_TASK", station_id="LINE_A"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
     assert response.status_code == 422
+
+
+def test_hmi_request_task_unknown_station_rejected(hmi_client) -> None:
+    client, queue, *_ = hmi_client
+
+    response = client.post(
+        "/hmi/action",
+        json=hmi_payload(action="REQUEST_TASK", station_id="UNKNOWN", destination_id="QA"),
+        headers=build_auth_header(TEST_OPERATOR_TOKEN),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == "Invalid route"
+    assert response.json()["detail"]["display"]["text"] == "Invalid route"
+    assert "task-created" not in queue.tasks
+
+
+def test_hmi_request_task_unknown_destination_rejected(hmi_client) -> None:
+    client, queue, *_ = hmi_client
+
+    response = client.post(
+        "/hmi/action",
+        json=hmi_payload(action="REQUEST_TASK", station_id="LINE_A", destination_id="WAREHOUSE"),
+        headers=build_auth_header(TEST_OPERATOR_TOKEN),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == "Invalid route"
+    assert response.json()["detail"]["display"]["text"] == "Invalid route"
+    assert "task-created" not in queue.tasks
+
+
+def test_hmi_request_task_unsupported_pair_rejected(hmi_client) -> None:
+    client, queue, *_ = hmi_client
+
+    response = client.post(
+        "/hmi/action",
+        json=hmi_payload(action="REQUEST_TASK", station_id="LINE_A", destination_id="LINE_B"),
+        headers=build_auth_header(TEST_OPERATOR_TOKEN),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == "Invalid route"
+    assert response.json()["detail"]["display"]["text"] == "Invalid route"
+    assert "task-created" not in queue.tasks
 
 
 def test_hmi_return_to_dock_creates_task(hmi_client) -> None:
@@ -393,3 +464,19 @@ def test_hmi_return_to_dock_creates_task(hmi_client) -> None:
     assert body["screen_id"] == "screen-front"
     assert body["task_id"] == "task-created"
     assert "task-created" in queue.tasks
+
+
+def test_hmi_return_to_dock_uses_configured_route_logic(hmi_client) -> None:
+    client, queue, _, event_bus = hmi_client
+    event_bus.route_store.routes.pop(("QA", "DOCK"))
+
+    response = client.post(
+        "/hmi/action",
+        json=hmi_payload(action="RETURN_TO_DOCK", station_id="QA", destination_id="DOCK"),
+        headers=build_auth_header(TEST_OPERATOR_TOKEN),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["message"] == "Invalid route"
+    assert response.json()["detail"]["display"]["text"] == "Invalid route"
+    assert "task-created" not in queue.tasks

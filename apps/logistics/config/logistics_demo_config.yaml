@@ -19,9 +19,13 @@ database:
   telemetry_retention_hours: 48
 
 routes:
-  routes_file: "data/logistics_routes.json"
-  stations_file: "data/logistics_stations.json"
+  routes_file: "data/routes.json"
+  stations_file: "data/stations.json"
   hot_reload_enabled: true
+
+logistics:
+  routes_file: "data/logistics_routes.json"
+  allow_placeholder_routes: true
 
 battery:
   warn_pct: 30

@@ -43,6 +43,11 @@ class RouteSection(BaseModel):
     hot_reload_enabled: bool = True
 
 
+class LogisticsSection(BaseModel):
+    routes_file: str = "data/logistics_routes.json"
+    allow_placeholder_routes: bool = True
+
+
 class BatterySection(BaseModel):
     warn_pct: int = Field(default=30, ge=0, le=100)
     critical_pct: int = Field(default=25, ge=0, le=100)
@@ -233,6 +238,7 @@ class AppConfig(BaseModel):
     workstation: WorkstationSection = Field(default_factory=WorkstationSection)
     database: DatabaseSection = Field(default_factory=DatabaseSection)
     routes: RouteSection = Field(default_factory=RouteSection)
+    logistics: LogisticsSection = Field(default_factory=LogisticsSection)
     battery: BatterySection = Field(default_factory=BatterySection)
     heartbeat: HeartbeatSection = Field(default_factory=HeartbeatSection)
     navigation: NavigationSection = Field(default_factory=NavigationSection)
@@ -254,6 +260,9 @@ class AppConfig(BaseModel):
 
     def stations_path(self) -> Path:
         return Path(self.routes.stations_file)
+
+    def logistics_routes_path(self) -> Path:
+        return Path(self.logistics.routes_file)
 
     def log_path(self) -> Path:
         return Path(self.logging.log_dir)

@@ -23,6 +23,12 @@ routes:
   stations_file: "data/stations.json"
   hot_reload_enabled: true
 
+logistics:
+  # Placeholder station/route allowlist for HMI task intake.
+  # This is not real navigation map data; movement must use validated route waypoints.
+  routes_file: "data/logistics_routes.json"
+  allow_placeholder_routes: true
+
 battery:
   warn_pct: 30
   critical_pct: 25

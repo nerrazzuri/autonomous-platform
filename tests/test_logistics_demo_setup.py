@@ -16,8 +16,9 @@ def test_logistics_demo_config_exists_with_logistics_specific_paths() -> None:
     content = config_path.read_text(encoding="utf-8")
     assert 'sdk_lib_path: "sdk/zsl-1"' in content
     assert 'sqlite_path: "data/logistics_quadruped.db"' in content
+    assert 'routes_file: "data/routes.json"' in content
+    assert 'stations_file: "data/stations.json"' in content
     assert 'routes_file: "data/logistics_routes.json"' in content
-    assert 'stations_file: "data/logistics_stations.json"' in content
     assert "__LOCAL_IP__" in content
     assert "__OPERATOR_TOKEN__" in content
     assert "__SUPERVISOR_TOKEN__" in content
@@ -42,15 +43,12 @@ def test_logistics_demo_start_script_exists_and_uses_python310() -> None:
 
 def test_logistics_demo_data_files_exist() -> None:
     routes_path = ROOT / "data" / "logistics_routes.json"
-    stations_path = ROOT / "data" / "logistics_stations.json"
 
     assert routes_path.exists()
-    assert stations_path.exists()
 
     routes_content = routes_path.read_text(encoding="utf-8")
-    stations_content = stations_path.read_text(encoding="utf-8")
 
-    assert '"A_TO_QA"' in routes_content
-    assert '"QA_TO_DOCK"' in routes_content
-    assert '"A"' in stations_content
-    assert '"DOCK"' in stations_content
+    assert '"LINE_A_TO_QA"' in routes_content
+    assert '"RETURN_TO_DOCK"' in routes_content
+    assert '"LINE_A"' in routes_content
+    assert '"DOCK"' in routes_content

@@ -8,10 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from pydantic import BaseModel, ValidationError
 
 from shared.api.auth import get_auth_context, require_operator
+from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 from apps.logistics.tasks.dispatcher import Dispatcher, get_dispatcher
 from apps.logistics.tasks.queue import TaskQueue, TaskQueueError, get_task_queue
+from apps.logistics.tasks.routes import LogisticsRouteStore, RouteValidationError, get_logistics_route_store
 
 logger = get_logger(__name__)
 EVENT_SOURCE = "api.hmi"
@@ -50,6 +52,10 @@ def get_dispatcher_dep() -> Dispatcher:
     return get_dispatcher()
 
 
+def get_logistics_route_store_dep() -> LogisticsRouteStore:
+    return get_logistics_route_store()
+
+
 def _require_task_id(task_id: str | None, action: str) -> str:
     if not task_id:
         raise HTTPException(
@@ -76,6 +82,7 @@ async def handle_hmi_action(
     request: HmiActionRequest,
     task_queue: TaskQueue,
     dispatcher: Dispatcher,
+    route_store: LogisticsRouteStore | None = None,
 ) -> HmiActionResponse:
     """Core HMI action handler shared by REST and WebSocket endpoints."""
     action = request.action.upper()
@@ -185,10 +192,30 @@ async def handle_hmi_action(
         station, destination = _require_station_destination(
             request.station_id, request.destination_id, action
         )
+        route_store = route_store or get_logistics_route_store_dep()
+        try:
+            route = route_store.validate_task_request(
+                station,
+                destination,
+                allow_placeholder=get_config().logistics.allow_placeholder_routes,
+            )
+        except RouteValidationError as exc:
+            logger.info(
+                "HMI route validation rejected request",
+                extra={"station_id": station, "destination_id": destination, "error": str(exc)},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "message": "Invalid route",
+                    "display": {"page": "idle", "text": "Invalid route"},
+                },
+            ) from exc
         try:
             task = await task_queue.submit_task(
                 station_id=station,
                 destination_id=destination,
+                notes=f"route_id={route.id}",
             )
         except Exception as exc:
             raise HTTPException(
@@ -234,8 +261,9 @@ def create_hmi_router() -> APIRouter:
         request: HmiActionRequest,
         task_queue: TaskQueue = Depends(get_task_queue_dep),
         dispatcher: Dispatcher = Depends(get_dispatcher_dep),
+        route_store: LogisticsRouteStore = Depends(get_logistics_route_store_dep),
     ) -> HmiActionResponse:
-        return await handle_hmi_action(request, task_queue, dispatcher)
+        return await handle_hmi_action(request, task_queue, dispatcher, route_store)
 
     @router.websocket("/ws")
     async def hmi_ws(websocket: WebSocket) -> None:
@@ -266,6 +294,7 @@ def create_hmi_router() -> APIRouter:
 
         task_queue = get_task_queue_dep()
         dispatcher = get_dispatcher_dep()
+        route_store = get_logistics_route_store_dep()
 
         try:
             while True:
@@ -286,14 +315,22 @@ def create_hmi_router() -> APIRouter:
                     continue
 
                 try:
-                    result = await handle_hmi_action(request, task_queue, dispatcher)
+                    result = await handle_hmi_action(request, task_queue, dispatcher, route_store)
                 except HTTPException as exc:
+                    message = exc.detail
+                    display = None
+                    if isinstance(exc.detail, dict):
+                        message = exc.detail.get("message", "HMI action failed")
+                        display = exc.detail.get("display")
+                    error_response = _ws_error_response(
+                        message=str(message),
+                        robot_id=request.robot_id,
+                        screen_id=request.screen_id,
+                    )
+                    if display is not None:
+                        error_response["display"] = display
                     await websocket.send_json(
-                        _ws_error_response(
-                            message=exc.detail,
-                            robot_id=request.robot_id,
-                            screen_id=request.screen_id,
-                        )
+                        error_response
                     )
                     continue
 
@@ -313,6 +350,7 @@ __all__ = [
     "HmiDisplayCommand",
     "create_hmi_router",
     "get_dispatcher_dep",
+    "get_logistics_route_store_dep",
     "get_task_queue_dep",
     "handle_hmi_action",
 ]

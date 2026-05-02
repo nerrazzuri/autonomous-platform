@@ -62,6 +62,20 @@ class FakeTaskQueue:
         return task
 
 
+class FakeRoute:
+    def __init__(self, route_id: str):
+        self.id = route_id
+
+
+class FakeLogisticsRouteStore:
+    def validate_task_request(self, origin_id: str, destination_id: str, *, allow_placeholder: bool = True):
+        from apps.logistics.tasks.routes import RouteValidationError
+
+        if (origin_id, destination_id) == ("LINE_A", "QA"):
+            return FakeRoute("LINE_A_TO_QA")
+        raise RouteValidationError("Route not configured")
+
+
 class FakeDispatcher:
     def __init__(self):
         self.pause_calls: list[str] = []
@@ -105,11 +119,13 @@ def hmi_ws_app(monkeypatch: pytest.MonkeyPatch):
     queue = FakeTaskQueue()
     dispatcher = FakeDispatcher()
     event_bus = FakeEventBus()
+    route_store = FakeLogisticsRouteStore()
 
     monkeypatch.setattr(auth_module, "get_config", lambda: config)
     monkeypatch.setattr(hmi_module, "get_task_queue_dep", lambda: queue)
     monkeypatch.setattr(hmi_module, "get_dispatcher_dep", lambda: dispatcher)
     monkeypatch.setattr(hmi_module, "get_event_bus", lambda: event_bus)
+    monkeypatch.setattr(hmi_module, "get_logistics_route_store_dep", lambda: route_store)
 
     app = FastAPI()
     app.include_router(hmi_module.create_hmi_router())
@@ -174,7 +190,7 @@ def test_ws_request_task_returns_accepted_response(hmi_ws_app) -> None:
             ws.send_json({
                 **HMI_IDENTITY,
                 "action": "REQUEST_TASK",
-                "station_id": "A",
+                "station_id": "LINE_A",
                 "destination_id": "QA",
             })
             msg = ws.receive_json()
@@ -186,6 +202,27 @@ def test_ws_request_task_returns_accepted_response(hmi_ws_app) -> None:
     assert msg["screen_id"] == "screen-front"
     assert msg["display"]["page"] == "queued"
     assert "task-ws-created" in queue.tasks
+
+
+def test_ws_request_task_invalid_route_returns_display_error(hmi_ws_app) -> None:
+    from fastapi.testclient import TestClient
+
+    app, queue, *_ = hmi_ws_app
+    with TestClient(app) as client:
+        with client.websocket_connect(f"/hmi/ws?token={TEST_OPERATOR_TOKEN}") as ws:
+            ws.send_json({
+                **HMI_IDENTITY,
+                "action": "REQUEST_TASK",
+                "station_id": "LINE_A",
+                "destination_id": "LINE_B",
+            })
+            msg = ws.receive_json()
+
+    assert msg["type"] == "hmi.action_response"
+    assert msg["success"] is False
+    assert msg["message"] == "Invalid route"
+    assert msg["display"]["text"] == "Invalid route"
+    assert "task-ws-created" not in queue.tasks
 
 
 # ---------------------------------------------------------------------------
