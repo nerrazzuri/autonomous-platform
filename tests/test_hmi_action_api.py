@@ -14,10 +14,15 @@ if str(ROOT) not in sys.path:
 TEST_OPERATOR_TOKEN = "test-operator-token"
 TEST_QA_TOKEN = "test-qa-token"
 TEST_SUPERVISOR_TOKEN = "test-supervisor-token"
+HMI_IDENTITY = {"robot_id": "robot-1", "screen_id": "screen-front"}
 
 
 def build_auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def hmi_payload(**kwargs) -> dict[str, str]:
+    return {**HMI_IDENTITY, **kwargs}
 
 
 def make_task_record(
@@ -133,7 +138,7 @@ def hmi_client(monkeypatch: pytest.MonkeyPatch):
 def test_hmi_action_requires_auth(hmi_client) -> None:
     client, *_ = hmi_client
 
-    response = client.post("/hmi/action", json={"action": "PAUSE_DISPATCHER"})
+    response = client.post("/hmi/action", json=hmi_payload(action="PAUSE_DISPATCHER"))
 
     assert response.status_code == 401
 
@@ -147,11 +152,23 @@ def test_hmi_action_unknown_returns_400(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "TELEPORT"},
+        json=hmi_payload(action="TELEPORT"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
     assert response.status_code == 400
+
+
+def test_hmi_action_requires_screen_identity(hmi_client) -> None:
+    client, *_ = hmi_client
+
+    response = client.post(
+        "/hmi/action",
+        json={"action": "PAUSE_DISPATCHER", "robot_id": "robot-1"},
+        headers=build_auth_header(TEST_OPERATOR_TOKEN),
+    )
+
+    assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +181,7 @@ def test_hmi_confirm_load_success_publishes_event(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "CONFIRM_LOAD", "task_id": "t1"},
+        json=hmi_payload(action="CONFIRM_LOAD", task_id="t1"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
@@ -172,10 +189,15 @@ def test_hmi_confirm_load_success_publishes_event(hmi_client) -> None:
     body = response.json()
     assert body["success"] is True
     assert body["message"] == "Load confirmed"
+    assert body["robot_id"] == "robot-1"
+    assert body["screen_id"] == "screen-front"
+    assert body["task_id"] == "t1"
     assert body["display"]["page"] == "in_transit"
     assert len(event_bus.published) == 1
     assert event_bus.published[0]["event_name"] == "human.confirmed_load"
     assert event_bus.published[0]["task_id"] == "t1"
+    assert event_bus.published[0]["payload"]["robot_id"] == "robot-1"
+    assert event_bus.published[0]["payload"]["screen_id"] == "screen-front"
 
 
 def test_hmi_confirm_load_wrong_status_returns_409(hmi_client) -> None:
@@ -184,7 +206,7 @@ def test_hmi_confirm_load_wrong_status_returns_409(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "CONFIRM_LOAD", "task_id": "t1"},
+        json=hmi_payload(action="CONFIRM_LOAD", task_id="t1"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
@@ -196,7 +218,7 @@ def test_hmi_confirm_load_missing_task_id_returns_422(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "CONFIRM_LOAD"},
+        json=hmi_payload(action="CONFIRM_LOAD"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
@@ -208,7 +230,7 @@ def test_hmi_confirm_load_task_not_found_returns_404(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "CONFIRM_LOAD", "task_id": "no-such-task"},
+        json=hmi_payload(action="CONFIRM_LOAD", task_id="no-such-task"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
@@ -225,7 +247,7 @@ def test_hmi_confirm_unload_success_publishes_event(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "CONFIRM_UNLOAD", "task_id": "t2"},
+        json=hmi_payload(action="CONFIRM_UNLOAD", task_id="t2"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
@@ -233,9 +255,14 @@ def test_hmi_confirm_unload_success_publishes_event(hmi_client) -> None:
     body = response.json()
     assert body["success"] is True
     assert body["message"] == "Unload confirmed"
+    assert body["robot_id"] == "robot-1"
+    assert body["screen_id"] == "screen-front"
+    assert body["task_id"] == "t2"
     assert body["display"]["page"] == "idle"
     assert len(event_bus.published) == 1
     assert event_bus.published[0]["event_name"] == "human.confirmed_unload"
+    assert event_bus.published[0]["payload"]["robot_id"] == "robot-1"
+    assert event_bus.published[0]["payload"]["screen_id"] == "screen-front"
 
 
 def test_hmi_confirm_unload_wrong_status_returns_409(hmi_client) -> None:
@@ -244,7 +271,7 @@ def test_hmi_confirm_unload_wrong_status_returns_409(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "CONFIRM_UNLOAD", "task_id": "t2"},
+        json=hmi_payload(action="CONFIRM_UNLOAD", task_id="t2"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
@@ -260,13 +287,15 @@ def test_hmi_pause_dispatcher(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "PAUSE_DISPATCHER"},
+        json=hmi_payload(action="PAUSE_DISPATCHER"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
+    assert body["robot_id"] == "robot-1"
+    assert body["screen_id"] == "screen-front"
     assert body["display"]["page"] == "paused"
     assert dispatcher.pause_calls == ["hmi"]
 
@@ -276,13 +305,15 @@ def test_hmi_resume_dispatcher(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "RESUME_DISPATCHER"},
+        json=hmi_payload(action="RESUME_DISPATCHER"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
+    assert body["robot_id"] == "robot-1"
+    assert body["screen_id"] == "screen-front"
     assert body["display"]["page"] == "idle"
     assert dispatcher.resume_calls == 1
 
@@ -296,15 +327,19 @@ def test_hmi_confirm_obstacle_cleared_publishes_event(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "CONFIRM_OBSTACLE_CLEARED"},
+        json=hmi_payload(action="CONFIRM_OBSTACLE_CLEARED"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
+    assert body["robot_id"] == "robot-1"
+    assert body["screen_id"] == "screen-front"
     assert len(event_bus.published) == 1
     assert event_bus.published[0]["event_name"] == "obstacle.cleared"
+    assert event_bus.published[0]["payload"]["robot_id"] == "robot-1"
+    assert event_bus.published[0]["payload"]["screen_id"] == "screen-front"
 
 
 # ---------------------------------------------------------------------------
@@ -316,13 +351,16 @@ def test_hmi_request_task_creates_task(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "REQUEST_TASK", "station_id": "A", "destination_id": "QA"},
+        json=hmi_payload(action="REQUEST_TASK", station_id="A", destination_id="QA"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
+    assert body["robot_id"] == "robot-1"
+    assert body["screen_id"] == "screen-front"
+    assert body["task_id"] == "task-created"
     assert "queued" in body["message"]
     assert "task-created" in queue.tasks
 
@@ -332,7 +370,7 @@ def test_hmi_request_task_missing_params_returns_422(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "REQUEST_TASK", "station_id": "A"},
+        json=hmi_payload(action="REQUEST_TASK", station_id="A"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
@@ -344,11 +382,14 @@ def test_hmi_return_to_dock_creates_task(hmi_client) -> None:
 
     response = client.post(
         "/hmi/action",
-        json={"action": "RETURN_TO_DOCK", "station_id": "QA", "destination_id": "DOCK"},
+        json=hmi_payload(action="RETURN_TO_DOCK", station_id="QA", destination_id="DOCK"),
         headers=build_auth_header(TEST_OPERATOR_TOKEN),
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
+    assert body["robot_id"] == "robot-1"
+    assert body["screen_id"] == "screen-front"
+    assert body["task_id"] == "task-created"
     assert "task-created" in queue.tasks

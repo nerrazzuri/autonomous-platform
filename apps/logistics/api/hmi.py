@@ -16,6 +16,8 @@ EVENT_SOURCE = "api.hmi"
 
 
 class HmiActionRequest(BaseModel):
+    robot_id: str
+    screen_id: str
     action: str
     task_id: str | None = None
     station_id: str | None = None
@@ -30,6 +32,9 @@ class HmiDisplayCommand(BaseModel):
 class HmiActionResponse(BaseModel):
     success: bool
     message: str
+    robot_id: str
+    screen_id: str
+    task_id: str | None = None
     display: HmiDisplayCommand | None = None
 
 
@@ -94,6 +99,8 @@ def create_hmi_router() -> APIRouter:
                 EventName.HUMAN_CONFIRMED_LOAD,
                 payload={
                     "task_id": tid,
+                    "robot_id": request.robot_id,
+                    "screen_id": request.screen_id,
                     "station_id": task.station_id,
                     "destination_id": task.destination_id,
                     "status": task.status,
@@ -104,6 +111,9 @@ def create_hmi_router() -> APIRouter:
             return HmiActionResponse(
                 success=True,
                 message="Load confirmed",
+                robot_id=request.robot_id,
+                screen_id=request.screen_id,
+                task_id=tid,
                 display=HmiDisplayCommand(page="in_transit", text="Delivering..."),
             )
 
@@ -122,6 +132,8 @@ def create_hmi_router() -> APIRouter:
                 EventName.HUMAN_CONFIRMED_UNLOAD,
                 payload={
                     "task_id": tid,
+                    "robot_id": request.robot_id,
+                    "screen_id": request.screen_id,
                     "station_id": task.station_id,
                     "destination_id": task.destination_id,
                     "status": task.status,
@@ -132,6 +144,9 @@ def create_hmi_router() -> APIRouter:
             return HmiActionResponse(
                 success=True,
                 message="Unload confirmed",
+                robot_id=request.robot_id,
+                screen_id=request.screen_id,
+                task_id=tid,
                 display=HmiDisplayCommand(page="idle", text="Task complete"),
             )
 
@@ -140,6 +155,8 @@ def create_hmi_router() -> APIRouter:
             return HmiActionResponse(
                 success=True,
                 message="Dispatcher paused",
+                robot_id=request.robot_id,
+                screen_id=request.screen_id,
                 display=HmiDisplayCommand(page="paused", text="System paused"),
             )
 
@@ -148,18 +165,22 @@ def create_hmi_router() -> APIRouter:
             return HmiActionResponse(
                 success=True,
                 message="Dispatcher resumed",
+                robot_id=request.robot_id,
+                screen_id=request.screen_id,
                 display=HmiDisplayCommand(page="idle", text="System active"),
             )
 
         if action == "CONFIRM_OBSTACLE_CLEARED":
             await get_event_bus().publish(
                 EventName.OBSTACLE_CLEARED,
-                payload={},
+                payload={"robot_id": request.robot_id, "screen_id": request.screen_id},
                 source=EVENT_SOURCE,
             )
             return HmiActionResponse(
                 success=True,
                 message="Obstacle cleared signal sent",
+                robot_id=request.robot_id,
+                screen_id=request.screen_id,
                 display=HmiDisplayCommand(page="idle", text="Resuming..."),
             )
 
@@ -180,6 +201,9 @@ def create_hmi_router() -> APIRouter:
             return HmiActionResponse(
                 success=True,
                 message=f"Task {task.id} queued",
+                robot_id=request.robot_id,
+                screen_id=request.screen_id,
+                task_id=task.id,
                 display=HmiDisplayCommand(page="queued", text=f"Task queued: {station} → {destination}"),
             )
 
