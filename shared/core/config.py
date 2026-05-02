@@ -208,6 +208,16 @@ class AlertsSection(BaseModel):
         return self
 
 
+class Ros2Section(BaseModel):
+    enabled: bool = False
+    scan_topic: str = "/scan"
+    pose_topic: str = "/pose"
+    odom_topic: str = "/odom"
+    odom_frame: str = "odom"
+    base_frame: str = "BASE_LINK"
+    odom_publish_hz: float = Field(default=20.0, gt=0)
+
+
 class AppConfig(BaseModel):
     app: AppSection = Field(default_factory=AppSection)
     quadruped: QuadrupedSection = Field(default_factory=QuadrupedSection)
@@ -224,6 +234,7 @@ class AppConfig(BaseModel):
     api: ApiSection = Field(default_factory=ApiSection)
     auth: AuthSection = Field(default_factory=AuthSection)
     alerts: AlertsSection = Field(default_factory=AlertsSection)
+    ros2: Ros2Section = Field(default_factory=Ros2Section)
 
     def database_path(self) -> Path:
         return Path(self.database.sqlite_path)

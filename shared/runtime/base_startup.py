@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Awaitable, Callable
+from datetime import datetime
+import math
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +13,7 @@ import yaml
 
 from shared.core.config import get_config
 from shared.core.database import get_database
-from shared.core.event_bus import get_event_bus
+from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger, setup_logging
 from shared.core.robot_config import RobotConfig, RobotConfigError, RobotConfigLoader
 from shared.navigation.obstacle import get_obstacle_detector
@@ -362,16 +364,82 @@ async def _startup_multi_robot_system(
                 logger.warning("Quadruped auto-stand startup stand_up failed", extra={"robot_id": platform.robot_id})
 
 
+def _wire_ros2_telemetry(event_bus) -> None:
+    from shared.ros2 import get_bridge
+
+    previous_state: dict[str, float | datetime] | None = None
+
+    async def _on_telemetry(event) -> None:
+        nonlocal previous_state
+
+        bridge = get_bridge()
+        if bridge is None:
+            return
+        pos = event.payload.get("position", [0.0, 0.0, 0.0])
+        rpy = event.payload.get("rpy", [0.0, 0.0, 0.0])
+        x = float(pos[0])
+        y = float(pos[1])
+        yaw = float(rpy[2])
+        timestamp = _parse_event_timestamp(event.payload.get("timestamp"))
+        vx = 0.0
+        vyaw = 0.0
+
+        if previous_state is not None and timestamp is not None:
+            previous_timestamp = previous_state.get("timestamp")
+            if isinstance(previous_timestamp, datetime):
+                dt = (timestamp - previous_timestamp).total_seconds()
+                if dt > 0.0:
+                    dx = x - float(previous_state["x"])
+                    dy = y - float(previous_state["y"])
+                    vx = (dx * math.cos(yaw) + dy * math.sin(yaw)) / dt
+                    vyaw = _normalize_angle(yaw - float(previous_state["yaw"])) / dt
+
+        bridge.set_odometry_state(
+            x=x,
+            y=y,
+            yaw=yaw,
+            vx=vx,
+            vyaw=vyaw,
+        )
+        previous_state = {"x": x, "y": y, "yaw": yaw, "timestamp": timestamp} if timestamp is not None else None
+
+    event_bus.subscribe(EventName.QUADRUPED_TELEMETRY, _on_telemetry)
+
+
+def _parse_event_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _normalize_angle(angle: float) -> float:
+    return math.atan2(math.sin(angle), math.cos(angle))
+
+
 async def startup_system() -> None:
     setup_logging()
 
     config = get_config()
+
+    ros2_config = getattr(config, "ros2", None)
+    if getattr(ros2_config, "enabled", False):
+        from shared.ros2 import init_bridge
+        init_bridge(ros2_config)
+        logger.info("ROS2 bridge started", extra={"component": "ros2_bridge"})
+
     config_path = _resolve_robot_config_path(config)
     logger.info("Shared platform startup begin", extra={"component": "startup", "robots_yaml_path": str(config_path)})
     database = get_database()
     route_store = get_route_store()
     event_bus = get_event_bus()
     obstacle_detector = get_obstacle_detector()
+
+    if getattr(ros2_config, "enabled", False):
+        _wire_ros2_telemetry(event_bus)
+
     robot_configs = _load_enabled_robot_configs(config)
     logger.info(
         "Robot config load complete",
@@ -414,6 +482,12 @@ async def shutdown_system() -> None:
         ]
 
     errors = await _run_shutdown_steps(shutdown_steps)
+
+    if getattr(getattr(get_config(), "ros2", None), "enabled", False):
+        from shared.ros2 import shutdown_bridge
+        shutdown_bridge()
+        logger.info("ROS2 bridge stopped", extra={"component": "ros2_bridge"})
+
     logger.info("Shared platform shutdown complete", extra={"error_count": len(errors)})
 
 

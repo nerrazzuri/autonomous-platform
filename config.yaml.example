@@ -96,3 +96,12 @@ alerts:
   smtp_password: null
   supervisor_email: null
   gpio_alert_enabled: false
+
+ros2:
+  enabled: true           # set false only when running the platform without ROS2
+  scan_topic: "/scan"
+  pose_topic: "/pose"     # slam_toolbox localization mode publishes here
+  odom_topic: "/odom"
+  odom_frame: "odom"
+  base_frame: "BASE_LINK" # must match URDF root link name exactly
+  odom_publish_hz: 20.0
