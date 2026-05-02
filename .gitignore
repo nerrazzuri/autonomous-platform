@@ -4,3 +4,9 @@ __pycache__/
 *.py[cod]
 .codex
 logs/*.log
+
+# Generated runtime/test audit data
+data/audit/
+
+# Local coding-agent planning artifacts
+docs/superpowers/plans/
