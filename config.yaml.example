@@ -40,6 +40,8 @@ navigation:
   max_forward_velocity: 0.35
   max_yaw_rate: 0.6
   obstacle_hold_timeout_seconds: 10.0
+  obstacle_stop_distance_m: 0.8
+  obstacle_forward_arc_deg: 90.0   # total cone width; ±45° around forward
   position_source: "odometry"
 
 patrol:

@@ -77,6 +77,8 @@ class NavigationSection(BaseModel):
     max_forward_velocity: float = Field(default=0.35, gt=0)
     max_yaw_rate: float = Field(default=0.6, gt=0)
     obstacle_hold_timeout_seconds: float = Field(default=10.0, gt=0)
+    obstacle_stop_distance_m: float = Field(default=0.8, gt=0)
+    obstacle_forward_arc_deg: float = Field(default=90.0, gt=0)
     position_source: str = "odometry"
 
     @field_validator("position_source")
