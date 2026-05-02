@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 import json
 from typing import Any
 from uuid import uuid4
@@ -14,7 +14,7 @@ _VALID_ACTOR_TYPES = {"system", "operator", "api", "unknown"}
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _require_non_empty_string(value: object, field_name: str) -> str:
@@ -39,8 +39,8 @@ def _normalize_timestamp(value: object) -> str:
     except ValueError as exc:
         raise ValueError("timestamp must be a valid ISO-8601 string") from exc
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _json_safe(value: Any) -> Any:

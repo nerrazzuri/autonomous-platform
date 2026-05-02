@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 
@@ -120,7 +120,7 @@ def apply_retention(policy: RetentionPolicy) -> RetentionReport:
 
     remaining: list[_CandidateFile] = []
     if policy.max_age_days is not None:
-        cutoff = datetime.now(UTC).timestamp() - (policy.max_age_days * 86400)
+        cutoff = datetime.now(timezone.utc).timestamp() - (policy.max_age_days * 86400)
         for candidate in candidates:
             if candidate.mtime < cutoff:
                 deleted = _delete_candidate(candidate, policy, report)
