@@ -107,3 +107,9 @@ ros2:
   odom_frame: "odom"
   base_frame: "BASE_LINK" # must match URDF root link name exactly
   odom_publish_hz: 20.0
+
+speaker:
+  enabled: false
+  arrival_sound: "data/audio/arrival.wav"  # provide this WAV file before enabling
+  volume_pct: 80
+  player_cmd: "aplay"

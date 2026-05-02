@@ -220,6 +220,13 @@ class Ros2Section(BaseModel):
     odom_publish_hz: float = Field(default=20.0, gt=0)
 
 
+class SpeakerSection(BaseModel):
+    enabled: bool = False
+    arrival_sound: str = "data/audio/arrival.wav"
+    volume_pct: int = Field(default=80, ge=0, le=100)
+    player_cmd: str = "aplay"
+
+
 class AppConfig(BaseModel):
     app: AppSection = Field(default_factory=AppSection)
     quadruped: QuadrupedSection = Field(default_factory=QuadrupedSection)
@@ -237,6 +244,7 @@ class AppConfig(BaseModel):
     auth: AuthSection = Field(default_factory=AuthSection)
     alerts: AlertsSection = Field(default_factory=AlertsSection)
     ros2: Ros2Section = Field(default_factory=Ros2Section)
+    speaker: SpeakerSection = Field(default_factory=SpeakerSection)
 
     def database_path(self) -> Path:
         return Path(self.database.sqlite_path)

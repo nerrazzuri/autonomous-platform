@@ -8,7 +8,9 @@ from apps.logistics.tasks.battery_manager import get_battery_manager
 from apps.logistics.tasks.dispatcher import get_dispatcher
 from apps.logistics.tasks.watchdog import get_watchdog
 from shared.core.config import get_config
+from shared.core.event_bus import get_event_bus
 from shared.core.logger import get_logger
+from shared.hardware.speaker import SpeakerAlert
 from shared.runtime import base_startup
 
 
@@ -27,11 +29,20 @@ async def _run_shutdown_steps(steps: list[tuple[str, Callable[[], Awaitable[None
 
 
 async def startup_system() -> None:
+    cfg = get_config()
     dispatcher = get_dispatcher()
     battery_manager = get_battery_manager()
     watchdog = get_watchdog()
 
     await base_startup.startup_system()
+
+    speaker = SpeakerAlert(
+        enabled=cfg.speaker.enabled,
+        arrival_sound=cfg.speaker.arrival_sound,
+        volume_pct=cfg.speaker.volume_pct,
+        player_cmd=cfg.speaker.player_cmd,
+    )
+    speaker.start(get_event_bus())
 
     rollback_steps: list[tuple[str, Callable[[], Awaitable[None]]]] = []
     try:
