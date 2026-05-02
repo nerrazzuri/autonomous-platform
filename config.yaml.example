@@ -40,6 +40,8 @@ navigation:
   max_forward_velocity: 0.35
   max_yaw_rate: 0.6
   obstacle_hold_timeout_seconds: 10.0
+  obstacle_stop_distance_m: 0.8
+  obstacle_forward_arc_deg: 90.0   # total cone width; ±45° around forward
   position_source: "odometry"
 
 patrol:
@@ -96,3 +98,12 @@ alerts:
   smtp_password: null
   supervisor_email: null
   gpio_alert_enabled: false
+
+ros2:
+  enabled: true           # set false only when running the platform without ROS2
+  scan_topic: "/scan"
+  pose_topic: "/pose"     # slam_toolbox localization mode publishes here
+  odom_topic: "/odom"
+  odom_frame: "odom"
+  base_frame: "BASE_LINK" # must match URDF root link name exactly
+  odom_publish_hz: 20.0

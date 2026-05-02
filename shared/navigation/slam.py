@@ -14,6 +14,13 @@ from shared.quadruped.state_monitor import QuadrupedState, StateMonitor, get_sta
 logger = get_logger(__name__)
 
 
+def _quat_to_yaw(x: float, y: float, z: float, w: float) -> float:
+    import math
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    return math.atan2(siny_cosp, cosy_cosp)
+
+
 class SLAMProviderError(Exception):
     """Raised when corrected-position data cannot be produced safely."""
 
@@ -136,7 +143,50 @@ class SLAMProvider:
         return self._enabled
 
     async def _compute_corrected_position(self) -> CorrectedPosition | None:
-        return None
+        try:
+            from shared.ros2 import get_bridge
+        except Exception:
+            return None
+
+        bridge = get_bridge()
+        if bridge is None:
+            return None
+
+        pose_msg = bridge.get_latest_pose()
+        if pose_msg is None:
+            return None
+
+        try:
+            pos = pose_msg.pose.pose.position
+            orientation = pose_msg.pose.pose.orientation
+            cov = pose_msg.pose.covariance
+
+            x = float(pos.x)
+            y = float(pos.y)
+            heading_rad = _quat_to_yaw(
+                float(orientation.x),
+                float(orientation.y),
+                float(orientation.z),
+                float(orientation.w),
+            )
+
+            try:
+                variance = float(cov[0]) + float(cov[7])
+                confidence = max(0.0, 1.0 - min(variance / 2.0, 1.0))
+            except Exception:
+                confidence = 0.5
+
+            return CorrectedPosition(
+                x=x,
+                y=y,
+                heading_rad=heading_rad,
+                source="slam_toolbox",
+                confidence=confidence,
+                timestamp=datetime.now(timezone.utc),
+            )
+        except Exception as exc:
+            logger.warning("SLAM provider: invalid pose message", extra={"error": str(exc)})
+            return None
 
     async def _fallback_to_odometry(self) -> CorrectedPosition:
         state = await self._state_monitor.get_current_state()
@@ -160,6 +210,7 @@ __all__ = [
     "CorrectedPosition",
     "SLAMProvider",
     "SLAMProviderError",
+    "_quat_to_yaw",
     "get_slam_provider",
     "slam_provider",
 ]

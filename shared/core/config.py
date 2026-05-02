@@ -77,6 +77,8 @@ class NavigationSection(BaseModel):
     max_forward_velocity: float = Field(default=0.35, gt=0)
     max_yaw_rate: float = Field(default=0.6, gt=0)
     obstacle_hold_timeout_seconds: float = Field(default=10.0, gt=0)
+    obstacle_stop_distance_m: float = Field(default=0.8, gt=0)
+    obstacle_forward_arc_deg: float = Field(default=90.0, gt=0)
     position_source: str = "odometry"
 
     @field_validator("position_source")
@@ -208,6 +210,16 @@ class AlertsSection(BaseModel):
         return self
 
 
+class Ros2Section(BaseModel):
+    enabled: bool = False
+    scan_topic: str = "/scan"
+    pose_topic: str = "/pose"
+    odom_topic: str = "/odom"
+    odom_frame: str = "odom"
+    base_frame: str = "BASE_LINK"
+    odom_publish_hz: float = Field(default=20.0, gt=0)
+
+
 class AppConfig(BaseModel):
     app: AppSection = Field(default_factory=AppSection)
     quadruped: QuadrupedSection = Field(default_factory=QuadrupedSection)
@@ -224,6 +236,7 @@ class AppConfig(BaseModel):
     api: ApiSection = Field(default_factory=ApiSection)
     auth: AuthSection = Field(default_factory=AuthSection)
     alerts: AlertsSection = Field(default_factory=AlertsSection)
+    ros2: Ros2Section = Field(default_factory=Ros2Section)
 
     def database_path(self) -> Path:
         return Path(self.database.sqlite_path)

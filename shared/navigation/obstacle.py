@@ -14,6 +14,28 @@ from shared.core.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _check_forward_arc(scan: Any, stop_distance_m: float, arc_half_deg: float) -> bool:
+    arc_half_rad = math.radians(arc_half_deg)
+    range_min = float(getattr(scan, "range_min", 0.0))
+    range_max_raw = getattr(scan, "range_max", None)
+    range_max: float | None = (
+        float(range_max_raw) if range_max_raw is not None and float(range_max_raw) > 0 else None
+    )
+    angle_min = float(scan.angle_min)
+    angle_increment = float(scan.angle_increment)
+    for i, r in enumerate(scan.ranges):
+        if not math.isfinite(r) or r <= 0:
+            continue
+        if r < range_min:
+            continue
+        if range_max is not None and r > range_max:
+            continue
+        angle = angle_min + i * angle_increment
+        if abs(angle) <= arc_half_rad and r <= stop_distance_m:
+            return True
+    return False
+
+
 class ObstacleDetectorError(Exception):
     """Raised when obstacle detector configuration or status data is invalid."""
 
@@ -77,7 +99,13 @@ class ObstacleStatus:
 class ObstacleDetector:
     """Safe null obstacle detector with an async lifecycle for future real detectors."""
 
-    def __init__(self, polling_interval_seconds: float = 0.2, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        polling_interval_seconds: float = 0.2,
+        enabled: bool = True,
+        stop_distance_m: float = 0.8,
+        forward_arc_deg: float = 90.0,
+    ) -> None:
         if (
             isinstance(polling_interval_seconds, bool)
             or not isinstance(polling_interval_seconds, (int, float))
@@ -87,6 +115,8 @@ class ObstacleDetector:
             raise ObstacleDetectorError("polling_interval_seconds must be > 0")
         self._polling_interval_seconds = float(polling_interval_seconds)
         self._enabled = enabled
+        self._stop_distance_m = float(stop_distance_m)
+        self._arc_half_deg = float(forward_arc_deg) / 2.0
         self._last_status = ObstacleStatus.clear()
         self._status_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
@@ -138,7 +168,26 @@ class ObstacleDetector:
         return self._last_error
 
     async def _detect_obstacle(self) -> ObstacleStatus:
-        return ObstacleStatus.clear()
+        try:
+            from shared.ros2 import get_bridge
+        except Exception:
+            return ObstacleStatus.clear()
+
+        bridge = get_bridge()
+        if bridge is None:
+            return ObstacleStatus.clear()
+
+        scan = bridge.get_latest_scan()
+        if scan is None:
+            return ObstacleStatus.clear()
+
+        try:
+            if _check_forward_arc(scan, self._stop_distance_m, self._arc_half_deg):
+                return ObstacleStatus.detected(source="m10_lidar", confidence=1.0)
+            return ObstacleStatus.clear()
+        except Exception as exc:
+            logger.warning("Obstacle detector: invalid scan message", extra={"error": str(exc)})
+            return ObstacleStatus.clear()
 
     async def _run_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -166,6 +215,7 @@ __all__ = [
     "ObstacleDetector",
     "ObstacleDetectorError",
     "ObstacleStatus",
+    "_check_forward_arc",
     "get_obstacle_detector",
     "obstacle_detector",
 ]
