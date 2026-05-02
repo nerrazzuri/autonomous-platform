@@ -52,6 +52,15 @@ def test_enabled_speaker_subscribes_to_navigation_completed():
     assert bus.subscriptions[0][0] == EventName.NAVIGATION_COMPLETED
 
 
+def test_start_called_twice_subscribes_only_once():
+    from shared.hardware.speaker import SpeakerAlert
+    bus = FakeEventBus()
+    speaker = SpeakerAlert(enabled=True, arrival_sound="data/audio/arrival.wav")
+    speaker.start(bus)
+    speaker.start(bus)
+    assert len(bus.subscriptions) == 1
+
+
 # ---------------------------------------------------------------------------
 # _on_navigation_completed handler
 # ---------------------------------------------------------------------------

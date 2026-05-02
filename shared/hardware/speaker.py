@@ -26,16 +26,20 @@ class SpeakerAlert:
         self._arrival_sound = str(arrival_sound)
         self._volume_pct = int(volume_pct)
         self._player_cmd = str(player_cmd)
+        self._started = False
 
     def start(self, event_bus: EventBus) -> None:
         if not self._enabled:
             logger.debug("Speaker alert disabled, skipping subscription")
+            return
+        if self._started:
             return
         event_bus.subscribe(
             EventName.NAVIGATION_COMPLETED,
             self._on_navigation_completed,
             subscriber_name="speaker_alert",
         )
+        self._started = True
         logger.info("Speaker alert subscribed to navigation.completed")
 
     async def _on_navigation_completed(self, event) -> None:
