@@ -28,6 +28,7 @@ from shared.provisioning.provision_models import ProvisionRequest, WifiNetwork
 from shared.quadruped.robot_registry import RobotNotFoundError, get_robot_registry
 from shared.quadruped.sdk_adapter import SDKAdapter, get_sdk_adapter
 from shared.quadruped.state_monitor import QuadrupedState, StateMonitor, get_state_monitor
+from apps.logistics.api.hmi import create_hmi_router
 from apps.logistics.runtime.startup import shutdown_system, startup_system
 from apps.logistics.tasks.dispatcher import Dispatcher, get_dispatcher
 from apps.logistics.tasks.queue import (
@@ -689,6 +690,7 @@ def create_app() -> FastAPI:
     application = FastAPI(title=config.app.name, lifespan=lifespan)
     application.add_api_websocket_route("/ws", websocket_endpoint)
     application.mount("/ui", StaticFiles(directory=ui_directory), name="ui")
+    application.include_router(create_hmi_router())
 
     @application.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
@@ -917,6 +919,12 @@ def create_app() -> FastAPI:
         except Exception as exc:
             _raise_task_queue_http_error(exc)
 
+        if task.status != "awaiting_load":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Task {task_id!r} is in status {task.status!r}, expected 'awaiting_load'",
+            )
+
         try:
             await get_event_bus().publish(
                 EventName.HUMAN_CONFIRMED_LOAD,
@@ -946,6 +954,12 @@ def create_app() -> FastAPI:
             task = await task_queue.get_task(task_id)
         except Exception as exc:
             _raise_task_queue_http_error(exc)
+
+        if task.status != "awaiting_unload":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Task {task_id!r} is in status {task.status!r}, expected 'awaiting_unload'",
+            )
 
         try:
             await get_event_bus().publish(
@@ -1299,6 +1313,7 @@ __all__ = [
     "UpdateRouteRequest",
     "app",
     "create_app",
+    "create_hmi_router",
     "get_dispatcher_dep",
     "get_route_store_dep",
     "get_sdk_adapter_dep",

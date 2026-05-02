@@ -460,6 +460,24 @@ def test_confirm_unload_not_found_returns_404(rest_client) -> None:
     assert response.status_code == 404
 
 
+def test_confirm_load_wrong_status_returns_409(rest_client) -> None:
+    client, queue, *_ = rest_client
+    queue.tasks["task-1"] = make_task_record("task-1", status="queued")
+
+    response = client.post("/tasks/task-1/confirm-load", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 409
+
+
+def test_confirm_unload_wrong_status_returns_409(rest_client) -> None:
+    client, queue, *_ = rest_client
+    queue.tasks["task-2"] = make_task_record("task-2", status="in_transit")
+
+    response = client.post("/tasks/task-2/confirm-unload", headers=build_auth_header(TEST_OPERATOR_TOKEN))
+
+    assert response.status_code == 409
+
+
 def test_confirm_load_requires_auth(rest_client) -> None:
     client, queue, *_ = rest_client
     queue.tasks["task-1"] = make_task_record("task-1")
