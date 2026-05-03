@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 import pytest_asyncio
 
+from shared.navigation.navigator import _CONTROL_LOOP_SECONDS
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -486,6 +487,9 @@ async def test_obstacle_cleared_resumes_navigation(navigator_env) -> None:
         heartbeat=FakeHeartbeat(),
         waypoint_tolerance_m=0.1,
         obstacle_hold_timeout_seconds=1.0,
+        obstacle_stable_clear_seconds=0.0,
+        obstacle_min_hold_seconds=0.0,
+        obstacle_resume_ramp_seconds=0.0,
     )
     resumed_events = []
     from core.event_bus import EventName
@@ -498,6 +502,7 @@ async def test_obstacle_cleared_resumes_navigation(navigator_env) -> None:
     await asyncio.sleep(0.02)
     await event_bus.publish(EventName.OBSTACLE_CLEARED, {})
     await event_bus.wait_until_idle(timeout=1.0)
+    await asyncio.sleep(0.02)
 
     result = await asyncio.wait_for(task, timeout=1.0)
 
@@ -644,3 +649,335 @@ def test_normalize_angle_rad() -> None:
     assert math.isclose(_normalize_angle_rad(3 * math.pi), math.pi)
     assert math.isclose(_normalize_angle_rad(-3 * math.pi), -math.pi)
     assert math.isclose(_normalize_angle_rad(0.5), 0.5)
+
+
+# ---------------------------------------------------------------------------
+# Obstacle policy: stable-clear delay
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_obstacle_stable_clear_delay_holds_before_resuming(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    route = make_route(target=(5.0, 0.0))
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+        waypoint_tolerance_m=0.1,
+        obstacle_hold_timeout_seconds=5.0,
+        obstacle_stable_clear_seconds=0.12,
+        obstacle_min_hold_seconds=0.0,
+        obstacle_resume_ramp_seconds=0.0,
+    )
+    from core.event_bus import EventName
+
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
+    await asyncio.sleep(0.02)
+
+    await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await event_bus.publish(EventName.OBSTACLE_CLEARED, {})
+    await event_bus.wait_until_idle(timeout=1.0)
+
+    # Still in stable-clear window — must remain blocked.
+    await asyncio.sleep(0.04)
+    assert navigator._blocked is True
+
+    # After the stable-clear delay the block must lift.
+    await asyncio.sleep(0.15)
+    assert navigator._blocked is False
+
+    await navigator.cancel_navigation()
+    await task
+
+
+@pytest.mark.asyncio
+async def test_obstacle_redetected_during_stable_clear_resets_timer(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    route = make_route(target=(5.0, 0.0))
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+        waypoint_tolerance_m=0.1,
+        obstacle_hold_timeout_seconds=5.0,
+        obstacle_stable_clear_seconds=0.12,
+        obstacle_min_hold_seconds=0.0,
+        obstacle_resume_ramp_seconds=0.0,
+    )
+    from core.event_bus import EventName
+
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
+    await asyncio.sleep(0.02)
+
+    await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await event_bus.publish(EventName.OBSTACLE_CLEARED, {})
+    await event_bus.wait_until_idle(timeout=1.0)
+    # Re-detected during the stable-clear window — cancels the timer.
+    await asyncio.sleep(0.06)
+    await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
+    await event_bus.wait_until_idle(timeout=1.0)
+
+    # More than original delay has passed but re-detection cancelled the timer.
+    await asyncio.sleep(0.10)
+    assert navigator._blocked is True
+
+    await navigator.cancel_navigation()
+    await task
+
+
+# ---------------------------------------------------------------------------
+# Obstacle policy: minimum hold time (spurious filter)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spurious_obstacle_does_not_increment_repeat_count(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    route = make_route(target=(1.0, 0.0))
+    state_monitor = FakeStateMonitor([make_state(0.0, 0.0), make_state(1.0, 0.0)])
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=state_monitor,
+        heartbeat=FakeHeartbeat(),
+        waypoint_tolerance_m=0.1,
+        obstacle_hold_timeout_seconds=2.0,
+        obstacle_stable_clear_seconds=0.0,
+        obstacle_min_hold_seconds=5.0,  # any natural detection is spurious
+        obstacle_resume_ramp_seconds=0.0,
+        obstacle_repeat_fallback_count=2,
+    )
+    from core.event_bus import EventName
+
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
+    await asyncio.sleep(0.02)
+
+    await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await event_bus.publish(EventName.OBSTACLE_CLEARED, {})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await asyncio.sleep(0.02)
+
+    # Count must be 0 after the spurious undo — fallback mode must not be active.
+    assert navigator._obstacle_count == 0
+    assert navigator._requires_hmi_confirmation is False
+
+    result = await asyncio.wait_for(task, timeout=1.0)
+    assert result.success is True
+
+
+# ---------------------------------------------------------------------------
+# Obstacle policy: repeated-obstacle fallback to manual confirmation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_repeat_fallback_ignores_sensor_clear(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    route = make_route(target=(5.0, 0.0))
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+        waypoint_tolerance_m=0.1,
+        obstacle_hold_timeout_seconds=5.0,
+        obstacle_stable_clear_seconds=0.0,
+        obstacle_min_hold_seconds=0.0,
+        obstacle_resume_ramp_seconds=0.0,
+        obstacle_repeat_fallback_count=2,
+    )
+    from core.event_bus import EventName
+
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
+    await asyncio.sleep(0.02)
+
+    # Two obstacle cycles — hits the repeat threshold on the second detect.
+    for _ in range(2):
+        await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
+        await event_bus.wait_until_idle(timeout=1.0)
+        await asyncio.sleep(0.02)
+        await event_bus.publish(EventName.OBSTACLE_CLEARED, {})
+        await event_bus.wait_until_idle(timeout=1.0)
+        await asyncio.sleep(0.05)
+
+    assert navigator._requires_hmi_confirmation is True
+    assert navigator._blocked is True  # sensor clear ignored; still blocked
+
+    await navigator.cancel_navigation()
+    await task
+
+
+@pytest.mark.asyncio
+async def test_repeat_fallback_resumes_on_manual_hmi_confirm(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    # Use a far target so navigation never completes during the obstacle cycles.
+    route = make_route(target=(50.0, 0.0))
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+        waypoint_tolerance_m=0.1,
+        obstacle_hold_timeout_seconds=5.0,
+        obstacle_stable_clear_seconds=0.0,
+        obstacle_min_hold_seconds=0.0,
+        obstacle_resume_ramp_seconds=0.0,
+        obstacle_repeat_fallback_count=2,
+    )
+    from core.event_bus import EventName
+
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
+    await asyncio.sleep(0.02)
+
+    for _ in range(2):
+        await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
+        await event_bus.wait_until_idle(timeout=1.0)
+        await asyncio.sleep(0.02)
+        await event_bus.publish(EventName.OBSTACLE_CLEARED, {})
+        await event_bus.wait_until_idle(timeout=1.0)
+        await asyncio.sleep(0.05)
+
+    assert navigator._requires_hmi_confirmation is True
+    assert navigator._blocked is True
+
+    # Manual HMI confirm — must unblock and reset the fallback flag.
+    await event_bus.publish(EventName.OBSTACLE_CLEARED, {"manual": True})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await asyncio.sleep(0.02)
+
+    assert navigator._blocked is False
+    assert navigator._requires_hmi_confirmation is False
+
+    await navigator.cancel_navigation()
+    await task
+
+
+# ---------------------------------------------------------------------------
+# Obstacle policy: manual HMI confirm bypasses stable-clear delay
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_manual_hmi_confirm_bypasses_stable_clear_delay(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    route = make_route(target=(1.0, 0.0))
+    state_monitor = FakeStateMonitor([make_state(0.0, 0.0), make_state(1.0, 0.0)])
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=state_monitor,
+        heartbeat=FakeHeartbeat(),
+        waypoint_tolerance_m=0.1,
+        obstacle_hold_timeout_seconds=5.0,
+        obstacle_stable_clear_seconds=60.0,  # very long delay to prove bypass
+        obstacle_min_hold_seconds=0.0,
+        obstacle_resume_ramp_seconds=0.0,
+    )
+    from core.event_bus import EventName
+
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
+    await asyncio.sleep(0.02)
+
+    await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await asyncio.sleep(0.02)
+
+    # Sensor-cleared alone would start the 60s timer — manual clear bypasses it.
+    await event_bus.publish(EventName.OBSTACLE_CLEARED, {"manual": True})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await asyncio.sleep(0.02)
+
+    assert navigator._blocked is False
+
+    result = await asyncio.wait_for(task, timeout=1.0)
+    assert result.success is True
+
+
+# ---------------------------------------------------------------------------
+# Obstacle policy: speed ramp on resume
+# ---------------------------------------------------------------------------
+
+
+def test_resume_ramp_factor_increases_over_time(navigator_env) -> None:
+    import time as _time
+
+    navigator_module, _ = navigator_env
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([make_route()]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+        obstacle_resume_ramp_seconds=4.0,
+    )
+
+    # No ramp active → factor is 1.0
+    assert navigator._compute_resume_ramp_factor() == 1.0
+
+    # Simulate ramp started 2 s ago (halfway).
+    navigator._resume_ramp_started_at = _time.monotonic() - 2.0
+    factor_mid = navigator._compute_resume_ramp_factor()
+    assert 0.4 < factor_mid < 0.6
+
+    # Ramp fully elapsed → factor is 1.0 and ramp timer is cleared.
+    navigator._resume_ramp_started_at = _time.monotonic() - 5.0
+    assert navigator._compute_resume_ramp_factor() == 1.0
+    assert navigator._resume_ramp_started_at is None
+
+
+def test_resume_ramp_zero_duration_always_returns_one(navigator_env) -> None:
+    import time as _time
+
+    navigator_module, _ = navigator_env
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([make_route()]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=FakeHeartbeat(),
+        obstacle_resume_ramp_seconds=0.0,
+    )
+    navigator._resume_ramp_started_at = _time.monotonic()
+    assert navigator._compute_resume_ramp_factor() == 1.0
+
+
+@pytest.mark.asyncio
+async def test_velocity_is_ramped_immediately_after_obstacle_clear(navigator_env) -> None:
+    navigator_module, event_bus = navigator_env
+    route = make_route(target=(5.0, 0.0))
+    heartbeat = FakeHeartbeat()
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([route]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
+        heartbeat=heartbeat,
+        waypoint_tolerance_m=0.1,
+        obstacle_hold_timeout_seconds=5.0,
+        obstacle_stable_clear_seconds=0.0,
+        obstacle_min_hold_seconds=0.0,
+        obstacle_resume_ramp_seconds=10.0,  # long ramp so first command is near-zero
+    )
+    from core.event_bus import EventName
+
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
+    await asyncio.sleep(0.02)
+
+    # Record heartbeat count before obstacle.
+    commands_before = len(heartbeat.commands)
+
+    await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
+    await event_bus.wait_until_idle(timeout=1.0)
+    await asyncio.sleep(0.02)
+    await event_bus.publish(EventName.OBSTACLE_CLEARED, {"manual": True})
+    await event_bus.wait_until_idle(timeout=1.0)
+
+    # Allow one control loop cycle after resume.
+    await asyncio.sleep(_CONTROL_LOOP_SECONDS * 3)
+
+    # At least one velocity command must have been sent after resume.
+    post_resume = [
+        cmd for cmd in heartbeat.commands[commands_before:]
+        if isinstance(cmd[0], float) and cmd[0] > 0
+    ]
+    assert post_resume, "expected at least one non-zero vx after obstacle clear"
+    # The first forward command after resume must be less than full waypoint speed.
+    first_vx = post_resume[0][0]
+    assert first_vx < 0.25, f"expected ramped velocity < 0.25 m/s but got {first_vx}"
+
+    await navigator.cancel_navigation()
+    await task

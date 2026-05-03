@@ -177,7 +177,7 @@ async def handle_hmi_action(
     if action == "CONFIRM_OBSTACLE_CLEARED":
         await get_event_bus().publish(
             EventName.OBSTACLE_CLEARED,
-            payload={"robot_id": request.robot_id, "screen_id": request.screen_id},
+            payload={"robot_id": request.robot_id, "screen_id": request.screen_id, "manual": True},
             source=EVENT_SOURCE,
         )
         return HmiActionResponse(

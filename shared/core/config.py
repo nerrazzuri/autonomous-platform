@@ -84,6 +84,10 @@ class NavigationSection(BaseModel):
     obstacle_hold_timeout_seconds: float = Field(default=10.0, gt=0)
     obstacle_stop_distance_m: float = Field(default=0.8, gt=0)
     obstacle_forward_arc_deg: float = Field(default=90.0, gt=0)
+    obstacle_stable_clear_seconds: float = Field(default=2.0, ge=0)
+    obstacle_min_hold_seconds: float = Field(default=0.5, ge=0)
+    obstacle_resume_ramp_seconds: float = Field(default=3.0, ge=0)
+    obstacle_repeat_fallback_count: int = Field(default=3, ge=1)
     position_source: str = "odometry"
 
     @field_validator("position_source")

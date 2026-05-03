@@ -364,6 +364,7 @@ def test_hmi_confirm_obstacle_cleared_publishes_event(hmi_client) -> None:
     assert event_bus.published[0]["event_name"] == "obstacle.cleared"
     assert event_bus.published[0]["payload"]["robot_id"] == "robot-1"
     assert event_bus.published[0]["payload"]["screen_id"] == "screen-front"
+    assert event_bus.published[0]["payload"]["manual"] is True
 
 
 # ---------------------------------------------------------------------------

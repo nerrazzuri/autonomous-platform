@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import time
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -68,6 +69,10 @@ class Navigator:
         waypoint_tolerance_m: float | None = None,
         heading_tolerance_deg: float | None = None,
         obstacle_hold_timeout_seconds: float | None = None,
+        obstacle_stable_clear_seconds: float | None = None,
+        obstacle_min_hold_seconds: float | None = None,
+        obstacle_resume_ramp_seconds: float | None = None,
+        obstacle_repeat_fallback_count: int | None = None,
         sdk_adapter: SDKAdapter | None = None,
         slam_provider: Any | None = None,
         robot_id: str = "default",
@@ -87,6 +92,26 @@ class Navigator:
             obstacle_hold_timeout_seconds
             if obstacle_hold_timeout_seconds is not None
             else config.navigation.obstacle_hold_timeout_seconds
+        )
+        self._obstacle_stable_clear_seconds = (
+            obstacle_stable_clear_seconds
+            if obstacle_stable_clear_seconds is not None
+            else config.navigation.obstacle_stable_clear_seconds
+        )
+        self._obstacle_min_hold_seconds = (
+            obstacle_min_hold_seconds
+            if obstacle_min_hold_seconds is not None
+            else config.navigation.obstacle_min_hold_seconds
+        )
+        self._obstacle_resume_ramp_seconds = (
+            obstacle_resume_ramp_seconds
+            if obstacle_resume_ramp_seconds is not None
+            else config.navigation.obstacle_resume_ramp_seconds
+        )
+        self._obstacle_repeat_fallback_count = (
+            obstacle_repeat_fallback_count
+            if obstacle_repeat_fallback_count is not None
+            else config.navigation.obstacle_repeat_fallback_count
         )
         self._position_source = config.navigation.position_source
         self._slam_provider = slam_provider
@@ -116,6 +141,13 @@ class Navigator:
         self._hold_event = asyncio.Event()
         self._subscription_ids: list[str] = []
         self._active_task_id: str | None = None
+
+        # Obstacle policy state — reset at the start of each navigation
+        self._obstacle_count: int = 0
+        self._obstacle_detected_at: float | None = None
+        self._requires_hmi_confirmation: bool = False
+        self._stable_clear_task: asyncio.Task[None] | None = None
+        self._resume_ramp_started_at: float | None = None
 
     async def execute_route(
         self,
@@ -170,6 +202,11 @@ class Navigator:
             self._blocked_started_at = None
             self._hold_event = asyncio.Event()
             self._active_task_id = task_id
+            self._obstacle_count = 0
+            self._obstacle_detected_at = None
+            self._requires_hmi_confirmation = False
+            self._stable_clear_task = None
+            self._resume_ramp_started_at = None
 
         self._subscribe_navigation_events()
         self._publish_event(
@@ -257,6 +294,7 @@ class Navigator:
             self._publish_event(EventName.NAVIGATION_FAILED, self._result_payload(result), task_id=task_id)
             return result
         finally:
+            self._cancel_stable_clear_task()
             await self._clear_target_velocity("navigator_exit")
             self._unsubscribe_navigation_events()
             self._is_navigating = False
@@ -323,6 +361,7 @@ class Navigator:
             if self._blocked_started_at is not None:
                 elapsed = asyncio.get_running_loop().time() - self._blocked_started_at
                 if elapsed >= self._obstacle_hold_timeout_seconds:
+                    self._cancel_stable_clear_task()
                     await self._clear_target_velocity("navigator_obstacle_timeout")
                     logger.warning("Navigation blocked by obstacle timeout", extra={"route_id": route.id})
                     raise NavigationBlockedError("Obstacle timeout")
@@ -362,13 +401,23 @@ class Navigator:
         heading_error = _normalize_angle_rad(target_heading_rad - current_yaw)
         heading_tolerance_rad = math.radians(self._heading_tolerance_deg)
 
-        forward_speed = min(waypoint.velocity, max(0.0, distance * 0.8))
+        ramp_factor = self._compute_resume_ramp_factor()
+        forward_speed = min(waypoint.velocity, max(0.0, distance * 0.8)) * ramp_factor
         if abs(heading_error) > heading_tolerance_rad:
             forward_speed *= 0.25
 
         max_yaw_rate = get_config().navigation.max_yaw_rate
         yaw_rate = max(-max_yaw_rate, min(max_yaw_rate, heading_error * 1.5))
         return forward_speed, 0.0, yaw_rate
+
+    def _compute_resume_ramp_factor(self) -> float:
+        if self._resume_ramp_started_at is None or self._obstacle_resume_ramp_seconds <= 0:
+            return 1.0
+        elapsed = time.monotonic() - self._resume_ramp_started_at
+        if elapsed >= self._obstacle_resume_ramp_seconds:
+            self._resume_ramp_started_at = None
+            return 1.0
+        return elapsed / self._obstacle_resume_ramp_seconds
 
     async def _resolve_route_definition(
         self,
@@ -417,9 +466,24 @@ class Navigator:
             return
         if not self._event_is_for_this_robot(event):
             return
+        # Cancel any pending stable-clear — obstacle is back.
+        self._cancel_stable_clear_task()
         if not self._blocked:
+            loop_time = asyncio.get_running_loop().time()
             self._blocked = True
-            self._blocked_started_at = asyncio.get_running_loop().time()
+            self._blocked_started_at = loop_time
+            self._obstacle_detected_at = loop_time
+            self._obstacle_count += 1
+            if self._obstacle_count >= self._obstacle_repeat_fallback_count and not self._requires_hmi_confirmation:
+                self._requires_hmi_confirmation = True
+                logger.warning(
+                    "Obstacle repeat threshold reached; manual CONFIRM_OBSTACLE_CLEARED required to resume",
+                    extra={
+                        "obstacle_count": self._obstacle_count,
+                        "threshold": self._obstacle_repeat_fallback_count,
+                        "route_id": self._current_route_id,
+                    },
+                )
         await self._clear_target_velocity("navigator_obstacle_detected")
         logger.warning("Navigation blocked by obstacle", extra={"route_id": self._current_route_id})
 
@@ -428,14 +492,75 @@ class Navigator:
             return
         if not self._event_is_for_this_robot(event):
             return
+
+        payload = getattr(event, "payload", {}) or {}
+        is_manual = payload.get("manual") is True
+
+        if self._requires_hmi_confirmation and not is_manual:
+            logger.info(
+                "Obstacle cleared by sensor but manual HMI confirmation required; "
+                "send CONFIRM_OBSTACLE_CLEARED to resume",
+                extra={"obstacle_count": self._obstacle_count, "route_id": self._current_route_id},
+            )
+            return
+
+        if is_manual:
+            # Operator confirmed: clear immediately regardless of delay or repeat state.
+            self._cancel_stable_clear_task()
+            self._requires_hmi_confirmation = False
+            self._apply_obstacle_clear(reason="manual_hmi")
+            return
+
+        # Sensor-auto path: treat a very brief detection as spurious.
+        loop_time = asyncio.get_running_loop().time()
+        hold_duration = (loop_time - self._obstacle_detected_at) if self._obstacle_detected_at is not None else float("inf")
+        if hold_duration < self._obstacle_min_hold_seconds:
+            # Undo the count increment so spurious flickers do not accumulate.
+            self._obstacle_count = max(0, self._obstacle_count - 1)
+            if self._requires_hmi_confirmation and self._obstacle_count < self._obstacle_repeat_fallback_count:
+                self._requires_hmi_confirmation = False
+            self._cancel_stable_clear_task()
+            self._apply_obstacle_clear(reason="spurious")
+            logger.debug(
+                "Spurious obstacle cleared immediately",
+                extra={"hold_duration_s": round(hold_duration, 3), "min_hold_s": self._obstacle_min_hold_seconds},
+            )
+            return
+
+        # Real obstacle cleared: wait for the path to stay clear before resuming.
+        self._cancel_stable_clear_task()
+        self._stable_clear_task = asyncio.create_task(
+            self._run_stable_clear_wait(), name="navigator-stable-clear"
+        )
+
+    async def _run_stable_clear_wait(self) -> None:
+        try:
+            await asyncio.sleep(self._obstacle_stable_clear_seconds)
+        except asyncio.CancelledError:
+            return
+        if self._is_navigating and self._blocked:
+            self._apply_obstacle_clear(reason="stable_clear")
+
+    def _apply_obstacle_clear(self, reason: str) -> None:
         self._blocked = False
         self._blocked_started_at = None
+        self._obstacle_detected_at = None
+        if self._obstacle_resume_ramp_seconds > 0:
+            self._resume_ramp_started_at = time.monotonic()
         self._publish_event(
             EventName.NAVIGATION_RESUMED,
-            {"route_id": self._current_route_id, "task_id": self._active_task_id},
+            {"route_id": self._current_route_id, "task_id": self._active_task_id, "reason": reason},
             task_id=self._active_task_id,
         )
-        logger.info("Navigation resumed after obstacle", extra={"route_id": self._current_route_id})
+        logger.info(
+            "Navigation resumed after obstacle",
+            extra={"route_id": self._current_route_id, "reason": reason},
+        )
+
+    def _cancel_stable_clear_task(self) -> None:
+        if self._stable_clear_task is not None and not self._stable_clear_task.done():
+            self._stable_clear_task.cancel()
+        self._stable_clear_task = None
 
     async def _clear_target_velocity(self, source: str) -> None:
         try:
