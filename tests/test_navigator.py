@@ -97,6 +97,16 @@ class FakeSDKAdapter:
     pass
 
 
+class FakeSLAMProvider:
+    def __init__(self, corrected_position):
+        self.corrected_position = corrected_position
+        self.calls = 0
+
+    async def get_corrected_position(self):
+        self.calls += 1
+        return self.corrected_position
+
+
 def make_route(route_id="A_TO_QA", *, hold=False, target=(1.0, 0.0)):
     from navigation.route_store import RouteDefinition, Waypoint
 
@@ -258,6 +268,33 @@ async def test_navigation_fails_when_no_state_available(navigator_env) -> None:
 
     assert result.success is False
     assert "state" in result.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_get_state_uses_slam_corrected_position_when_configured(monkeypatch, navigator_env) -> None:
+    navigator_module, _ = navigator_env
+    from shared.navigation.slam import CorrectedPosition
+
+    config = navigator_module.get_config()
+    monkeypatch.setattr(
+        navigator_module,
+        "get_config",
+        lambda: config.model_copy(update={"navigation": config.navigation.model_copy(update={"position_source": "slam"})}),
+    )
+    slam_provider = FakeSLAMProvider(CorrectedPosition(x=3.25, y=4.5, heading_rad=1.2, source="slam_toolbox", confidence=0.9))
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([make_route()]),
+        state_monitor=FakeStateMonitor([make_state(0.0, 0.0, yaw=0.1)]),
+        heartbeat=FakeHeartbeat(),
+        slam_provider=slam_provider,
+    )
+
+    state = await navigator._get_state_or_poll()
+
+    assert state is not None
+    assert state.position == (3.25, 4.5, 0.0)
+    assert state.rpy == (0.0, 0.0, 1.2)
+    assert slam_provider.calls == 1
 
 
 @pytest.mark.asyncio

@@ -215,6 +215,16 @@ def test_path_helpers_return_path_objects(monkeypatch: pytest.MonkeyPatch) -> No
     assert isinstance(config.log_path(), Path)
 
 
+def test_default_route_store_files_exist(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch)
+
+    config = module.AppConfig()
+
+    assert config.routes_path().exists()
+    assert config.stations_path().exists()
+    assert config.routes_path() != config.logistics_routes_path()
+
+
 def test_reload_config_replaces_cached_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "config.yaml"
     write_yaml(

@@ -1,0 +1,247 @@
+{
+  "routes": [
+    {
+      "id": "A_TO_QA",
+      "name": "Line A to QA Lab",
+      "origin_id": "A",
+      "destination_id": "QA",
+      "active": true,
+      "waypoints": [
+        {
+          "name": "A_exit",
+          "x": 0.0,
+          "y": 0.0,
+          "heading_deg": 0.0,
+          "velocity": 0.25,
+          "hold": true
+        },
+        {
+          "name": "A_mid_corridor",
+          "x": 2.2,
+          "y": 0.8,
+          "heading_deg": 18.0,
+          "velocity": 0.3,
+          "hold": false
+        },
+        {
+          "name": "QA_approach_from_a",
+          "x": 5.1,
+          "y": 2.0,
+          "heading_deg": 90.0,
+          "velocity": 0.2,
+          "hold": true
+        }
+      ],
+      "metadata": {
+        "notes": "Sample commissioning route for Production Line A to QA"
+      }
+    },
+    {
+      "id": "B_TO_QA",
+      "name": "Line B to QA Lab",
+      "origin_id": "B",
+      "destination_id": "QA",
+      "active": true,
+      "waypoints": [
+        {
+          "name": "B_exit",
+          "x": 0.0,
+          "y": 4.0,
+          "heading_deg": 0.0,
+          "velocity": 0.25,
+          "hold": true
+        },
+        {
+          "name": "B_mid_corridor",
+          "x": 2.6,
+          "y": 3.4,
+          "heading_deg": -15.0,
+          "velocity": 0.3,
+          "hold": false
+        },
+        {
+          "name": "QA_approach_from_b",
+          "x": 5.1,
+          "y": 2.4,
+          "heading_deg": -90.0,
+          "velocity": 0.2,
+          "hold": true
+        }
+      ],
+      "metadata": {
+        "notes": "Sample commissioning route for Production Line B to QA"
+      }
+    },
+    {
+      "id": "C_TO_QA",
+      "name": "Line C to QA Lab",
+      "origin_id": "C",
+      "destination_id": "QA",
+      "active": true,
+      "waypoints": [
+        {
+          "name": "C_exit",
+          "x": 0.0,
+          "y": 8.0,
+          "heading_deg": 0.0,
+          "velocity": 0.25,
+          "hold": true
+        },
+        {
+          "name": "C_mid_corridor",
+          "x": 2.7,
+          "y": 6.6,
+          "heading_deg": -26.0,
+          "velocity": 0.3,
+          "hold": false
+        },
+        {
+          "name": "QA_approach_from_c",
+          "x": 5.1,
+          "y": 2.8,
+          "heading_deg": -90.0,
+          "velocity": 0.2,
+          "hold": true
+        }
+      ],
+      "metadata": {
+        "notes": "Sample commissioning route for Production Line C to QA"
+      }
+    },
+    {
+      "id": "QA_TO_A",
+      "name": "QA Lab to Line A",
+      "origin_id": "QA",
+      "destination_id": "A",
+      "active": true,
+      "waypoints": [
+        {
+          "name": "QA_depart_to_a",
+          "x": 5.0,
+          "y": 2.0,
+          "heading_deg": 270.0,
+          "velocity": 0.2,
+          "hold": true
+        },
+        {
+          "name": "A_return_mid",
+          "x": 2.1,
+          "y": 0.9,
+          "heading_deg": 200.0,
+          "velocity": 0.3,
+          "hold": false
+        },
+        {
+          "name": "A_arrival",
+          "x": 0.1,
+          "y": 0.0,
+          "heading_deg": 180.0,
+          "velocity": 0.2,
+          "hold": true
+        }
+      ]
+    },
+    {
+      "id": "QA_TO_B",
+      "name": "QA Lab to Line B",
+      "origin_id": "QA",
+      "destination_id": "B",
+      "active": true,
+      "waypoints": [
+        {
+          "name": "QA_depart_to_b",
+          "x": 5.0,
+          "y": 2.0,
+          "heading_deg": 90.0,
+          "velocity": 0.2,
+          "hold": true
+        },
+        {
+          "name": "B_return_mid",
+          "x": 2.5,
+          "y": 3.2,
+          "heading_deg": 155.0,
+          "velocity": 0.3,
+          "hold": false
+        },
+        {
+          "name": "B_arrival",
+          "x": 0.1,
+          "y": 4.0,
+          "heading_deg": 180.0,
+          "velocity": 0.2,
+          "hold": true
+        }
+      ]
+    },
+    {
+      "id": "QA_TO_C",
+      "name": "QA Lab to Line C",
+      "origin_id": "QA",
+      "destination_id": "C",
+      "active": true,
+      "waypoints": [
+        {
+          "name": "QA_depart_to_c",
+          "x": 5.0,
+          "y": 2.0,
+          "heading_deg": 90.0,
+          "velocity": 0.2,
+          "hold": true
+        },
+        {
+          "name": "C_return_mid",
+          "x": 2.6,
+          "y": 6.5,
+          "heading_deg": 150.0,
+          "velocity": 0.3,
+          "hold": false
+        },
+        {
+          "name": "C_arrival",
+          "x": 0.1,
+          "y": 8.0,
+          "heading_deg": 180.0,
+          "velocity": 0.2,
+          "hold": true
+        }
+      ]
+    },
+    {
+      "id": "QA_TO_DOCK",
+      "name": "QA Lab to Charging Dock",
+      "origin_id": "QA",
+      "destination_id": "DOCK",
+      "active": true,
+      "waypoints": [
+        {
+          "name": "QA_depart_to_dock",
+          "x": 5.0,
+          "y": 2.0,
+          "heading_deg": -90.0,
+          "velocity": 0.2,
+          "hold": true
+        },
+        {
+          "name": "dock_corridor",
+          "x": 6.4,
+          "y": 0.8,
+          "heading_deg": -35.0,
+          "velocity": 0.25,
+          "hold": false
+        },
+        {
+          "name": "dock_arrival",
+          "x": 7.8,
+          "y": 0.0,
+          "heading_deg": 0.0,
+          "velocity": 0.15,
+          "hold": true
+        }
+      ],
+      "metadata": {
+        "notes": "Sample charging return route"
+      }
+    }
+  ]
+}

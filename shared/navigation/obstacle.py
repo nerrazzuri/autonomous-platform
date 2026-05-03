@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 
 
@@ -149,8 +150,10 @@ class ObstacleDetector:
     async def poll_once(self) -> ObstacleStatus:
         status = await self._detect_obstacle()
         async with self._status_lock:
+            previous_status = self._last_status
             self._last_status = status
         self._poll_count += 1
+        self._publish_transition(previous_status, status)
         logger.debug("Obstacle detector poll completed", extra={"obstacle_present": status.obstacle_present})
         return status
 
@@ -188,6 +191,22 @@ class ObstacleDetector:
         except Exception as exc:
             logger.warning("Obstacle detector: invalid scan message", extra={"error": str(exc)})
             return ObstacleStatus.clear()
+
+    def _publish_transition(self, previous_status: ObstacleStatus, current_status: ObstacleStatus) -> None:
+        if previous_status.obstacle_present == current_status.obstacle_present:
+            return
+
+        event_name = (
+            EventName.OBSTACLE_DETECTED
+            if current_status.obstacle_present
+            else EventName.OBSTACLE_CLEARED
+        )
+        try:
+            get_event_bus().publish_nowait(event_name, payload=current_status.to_dict(), source=__name__)
+        except asyncio.QueueFull:
+            logger.warning("Obstacle detector event bus queue full", extra={"event_name": event_name.value})
+        except Exception:
+            logger.exception("Obstacle detector failed to publish event", extra={"event_name": event_name.value})
 
     async def _run_loop(self) -> None:
         while not self._stop_event.is_set():

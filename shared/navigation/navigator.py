@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from shared.core.config import get_config
@@ -69,6 +69,7 @@ class Navigator:
         heading_tolerance_deg: float | None = None,
         obstacle_hold_timeout_seconds: float | None = None,
         sdk_adapter: SDKAdapter | None = None,
+        slam_provider: Any | None = None,
         robot_id: str = "default",
     ) -> None:
         config = get_config()
@@ -87,6 +88,12 @@ class Navigator:
             if obstacle_hold_timeout_seconds is not None
             else config.navigation.obstacle_hold_timeout_seconds
         )
+        self._position_source = config.navigation.position_source
+        self._slam_provider = slam_provider
+        if self._position_source == "slam" and self._slam_provider is None:
+            from shared.navigation.slam import get_slam_provider
+
+            self._slam_provider = get_slam_provider()
         if self._waypoint_tolerance_m <= 0:
             raise NavigatorError("waypoint_tolerance_m must be > 0")
         if self._heading_tolerance_deg <= 0:
@@ -325,7 +332,22 @@ class Navigator:
         state = await self._state_monitor.get_current_state()
         if state is None:
             state = await self._state_monitor.poll_once()
+        if state is not None and self._position_source == "slam" and self._slam_provider is not None:
+            state = await self._apply_slam_position(state)
         return state
+
+    async def _apply_slam_position(self, state: QuadrupedState) -> QuadrupedState:
+        try:
+            corrected_position = await self._slam_provider.get_corrected_position()
+        except Exception as exc:
+            logger.warning("Navigator falling back to odometry state", extra={"error": str(exc)})
+            return state
+
+        return replace(
+            state,
+            position=(corrected_position.x, corrected_position.y, state.position[2]),
+            rpy=(state.rpy[0], state.rpy[1], corrected_position.heading_rad),
+        )
 
     def _compute_velocity_command(
         self,
