@@ -39,10 +39,11 @@ OS_CODENAME="${VERSION_CODENAME:-}"
 printf 'Detected: %s %s (%s)\n' "${NAME:-unknown}" "${VERSION_ID:-unknown}" "${OS_CODENAME:-unknown}"
 
 if [[ "$OS_CODENAME" == "noble" ]]; then
-    printf 'WARNING: Ubuntu 24.04 Noble detected.\n'
-    printf '  python3.10 packages are not available in the Noble apt repos by default.\n'
-    printf '  You must add the deadsnakes PPA or use a container to get python3.10.\n'
-    printf '  Proceeding, but python3.10 installation will likely fail.\n'
+    printf 'ERROR: Ubuntu 24.04 Noble is not a supported workstation OS.\n' >&2
+    printf '       Use Ubuntu 22.04 Jammy. Noble lacks python3.10 in its default repos\n' >&2
+    printf '       and ROS2 Humble apt install is not supported on Noble.\n' >&2
+    printf '       Alternative: use a Docker container with ubuntu:22.04.\n' >&2
+    exit 1
 elif [[ "$OS_CODENAME" != "jammy" ]]; then
     printf 'WARNING: Untested OS "%s". Continuing, but results may vary.\n' "$OS_CODENAME"
 fi
@@ -91,20 +92,6 @@ PYTHON_PKGS=(
     python3.10-dev
     python3-pip
 )
-
-if [[ "$OS_CODENAME" == "noble" ]]; then
-    printf 'WARN: On Noble, python3.10 is not in the default repos.\n'
-    printf '      Adding deadsnakes PPA to attempt python3.10 install.\n'
-    if [[ "$DRY_RUN" != "1" ]]; then
-        if ! apt-cache show python3.10 >/dev/null 2>&1; then
-            add-apt-repository -y ppa:deadsnakes/ppa
-            apt-get update -y
-        fi
-    else
-        printf '[DRY_RUN] add-apt-repository -y ppa:deadsnakes/ppa\n'
-        printf '[DRY_RUN] apt-get update -y\n'
-    fi
-fi
 
 run apt-get install -y "${PYTHON_PKGS[@]}"
 
