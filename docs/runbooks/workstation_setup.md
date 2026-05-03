@@ -144,6 +144,48 @@ wheeltec_ros2 are expected when the hardware is not connected.
 
 ---
 
+## Step 7 — Generate Local POC Config
+
+The committed demo/example configs contain placeholder auth tokens. Do not
+edit them with real secrets. Generate an uncommitted local config instead:
+
+```bash
+python3.10 scripts/setup/create_poc_local_config.py \
+  --output config.local.yaml \
+  --workstation-ip <workstation_ip> \
+  --quadruped-ip <quadruped_ip> \
+  --sdk-lib-path sdk/zsl-1
+```
+
+The script:
+
+- Creates `config.local.yaml` from `apps/logistics/config/logistics_demo_config.yaml`.
+- Generates operator, QA, and supervisor tokens.
+- Refuses to overwrite an existing config unless `--force` is used.
+- Sets POC defaults such as `ros2.enabled=true` and `navigation.position_source=slam`.
+- Leaves `logistics.allow_placeholder_routes=true` for commissioning.
+- Writes the file with restrictive permissions where supported.
+
+Use `--print-tokens` only in a private terminal if you need to see the generated
+tokens once. Do not include token output in screenshots or shared logs.
+
+Review site-specific values:
+
+```bash
+nano config.local.yaml
+```
+
+Then verify startup without launching the backend:
+
+```bash
+APP_CONFIG=config.local.yaml DRY_RUN=1 ./scripts/start_logistics_dev.sh
+```
+
+After real station and route capture, switch `allow_placeholder_routes` to
+`false` before a supervised route demo.
+
+---
+
 ## Common Issues
 
 ### `python3.10` not found after install

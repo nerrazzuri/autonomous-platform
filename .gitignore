@@ -4,6 +4,11 @@ __pycache__/
 *.py[cod]
 .codex
 logs/*.log
+.env
+.env.*
+config.local.yaml
+config.*.local.yaml
+*.local.yaml
 
 # Generated runtime/test audit data
 data/audit/

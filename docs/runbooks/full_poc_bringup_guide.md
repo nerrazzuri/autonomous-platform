@@ -191,24 +191,39 @@ Rules:
 
 ## 7. Create Local POC Config
 
-Do not put real secrets into committed config files. Create a local uncommitted config, for example:
+Do not put real secrets into committed config files. Generate a local uncommitted config with generated tokens:
 
 ```bash
 cd /home/liang/Projects/autonomous-platform-main
-cp apps/logistics/config/logistics_demo_config.yaml config.local.yaml
+python3.10 scripts/setup/create_poc_local_config.py \
+  --output config.local.yaml \
+  --workstation-ip <workstation_ip> \
+  --quadruped-ip <quadruped_ip> \
+  --sdk-lib-path sdk/zsl-1
 ```
 
-Generate local tokens:
+The script refuses to overwrite an existing config unless `--force` is provided. It generates operator, QA, and supervisor tokens, writes them into `config.local.yaml`, and sets POC defaults such as `ros2.enabled=true` and `navigation.position_source=slam`.
+
+If you need to display the generated tokens once in a private terminal:
 
 ```bash
-python3.10 - <<'PY'
-import secrets
-for name in ["OPERATOR", "QA", "SUPERVISOR"]:
-    print(f"{name}_TOKEN={secrets.token_urlsafe(32)}")
-PY
+python3.10 scripts/setup/create_poc_local_config.py \
+  --output config.local.yaml \
+  --workstation-ip <workstation_ip> \
+  --quadruped-ip <quadruped_ip> \
+  --sdk-lib-path sdk/zsl-1 \
+  --print-tokens
 ```
 
-Edit `config.local.yaml` and set:
+Do not use `--print-tokens` in screenshots, shared terminals, or logs.
+
+Review the generated file:
+
+```bash
+nano config.local.yaml
+```
+
+Confirm these values:
 
 - `auth.operator_token`: generated operator token.
 - `auth.qa_token`: generated QA token.
@@ -228,6 +243,12 @@ Edit `config.local.yaml` and set:
 - `speaker.enabled`: `true` only when testing speaker output.
 
 During initial commissioning, `logistics.allow_placeholder_routes` may remain `true` while station and route data are being captured. Before a real task demo, set it to `false` after routes are captured and route `placeholder` flags are cleared.
+
+Dry-run startup with the generated config:
+
+```bash
+APP_CONFIG=config.local.yaml DRY_RUN=1 ./scripts/start_logistics_dev.sh
+```
 
 ## 8. Start Backend
 
