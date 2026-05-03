@@ -25,7 +25,25 @@ The script fails only for required project files or missing Python 3.10. Missing
 Dry-run first:
 
 ```bash
-DRY_RUN=1 ./scripts/start_logistics_dev.sh
+DRY_RUN=1 ALLOW_PLACEHOLDER_TOKENS=1 ./scripts/start_logistics_dev.sh
+```
+
+The committed demo config intentionally contains placeholder auth tokens. The startup script refuses to run with those placeholders unless `ALLOW_PLACEHOLDER_TOKENS=1` is set for a dev-only dry run.
+
+Generate local tokens without writing them to the repo:
+
+```bash
+python3.10 - <<'PY'
+import secrets
+for name in ("OPERATOR_TOKEN", "QA_TOKEN", "SUPERVISOR_TOKEN"):
+    print(f"{name}={secrets.token_urlsafe(32)}")
+PY
+```
+
+Create an uncommitted local config from `apps/logistics/config/logistics_demo_config.yaml`, replace `__OPERATOR_TOKEN__`, `__QA_TOKEN__`, and `__SUPERVISOR_TOKEN__`, then start with:
+
+```bash
+APP_CONFIG=config.local.yaml ./scripts/start_logistics_dev.sh
 ```
 
 Start the local backend:
@@ -73,11 +91,11 @@ ROS_LAUNCH_ARGS="start_lidar:=false map_file:=/path/to/map.yaml" START_ROS_STACK
 
 ## HMI Smoke Examples
 
-REST action example using placeholder tokens only:
+REST action example using a local operator token:
 
 ```bash
 curl -sS -X POST http://localhost:8080/hmi/action \
-  -H "Authorization: Bearer change-me-operator" \
+  -H "Authorization: Bearer <operator-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "robot_id": "robot-1",

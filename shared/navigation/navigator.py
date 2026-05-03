@@ -91,9 +91,9 @@ class Navigator:
         self._position_source = config.navigation.position_source
         self._slam_provider = slam_provider
         if self._position_source == "slam" and self._slam_provider is None:
-            from shared.navigation.slam import get_slam_provider
+            from shared.navigation.slam import SLAMProvider
 
-            self._slam_provider = get_slam_provider()
+            self._slam_provider = SLAMProvider(state_monitor=self._state_monitor, enabled=True)
         if self._waypoint_tolerance_m <= 0:
             raise NavigatorError("waypoint_tolerance_m must be > 0")
         if self._heading_tolerance_deg <= 0:

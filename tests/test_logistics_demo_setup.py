@@ -24,6 +24,18 @@ def test_logistics_demo_config_exists_with_logistics_specific_paths() -> None:
     assert "__SUPERVISOR_TOKEN__" in content
 
 
+def test_logistics_demo_config_enables_ros2_bridge() -> None:
+    from shared.core.config import load_config
+
+    config = load_config(ROOT / "apps" / "logistics" / "config" / "logistics_demo_config.yaml")
+
+    assert config.ros2.enabled is True
+    assert config.ros2.scan_topic == "/scan"
+    assert config.ros2.pose_topic == "/pose"
+    assert config.ros2.odom_topic == "/odom"
+    assert config.ros2.base_frame == "BASE_LINK"
+
+
 def test_logistics_demo_start_script_exists_and_uses_python310() -> None:
     script_path = ROOT / "apps" / "logistics" / "scripts" / "start_logistics_demo.sh"
 

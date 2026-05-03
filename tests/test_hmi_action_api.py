@@ -28,7 +28,7 @@ def hmi_payload(**kwargs) -> dict[str, str]:
 def make_task_record(
     task_id: str,
     *,
-    station_id: str = "A",
+    station_id: str = "LINE_A",
     destination_id: str = "QA",
     status: str = "queued",
 ):
@@ -201,7 +201,7 @@ def test_hmi_action_requires_screen_identity(hmi_client) -> None:
 
 def test_hmi_confirm_load_success_publishes_event(hmi_client) -> None:
     client, queue, _, event_bus = hmi_client
-    queue.tasks["t1"] = make_task_record("t1", station_id="A", destination_id="QA", status="awaiting_load")
+    queue.tasks["t1"] = make_task_record("t1", station_id="LINE_A", destination_id="QA", status="awaiting_load")
 
     response = client.post(
         "/hmi/action",
@@ -267,7 +267,7 @@ def test_hmi_confirm_load_task_not_found_returns_404(hmi_client) -> None:
 
 def test_hmi_confirm_unload_success_publishes_event(hmi_client) -> None:
     client, queue, _, event_bus = hmi_client
-    queue.tasks["t2"] = make_task_record("t2", station_id="A", destination_id="QA", status="awaiting_unload")
+    queue.tasks["t2"] = make_task_record("t2", station_id="LINE_A", destination_id="QA", status="awaiting_unload")
 
     response = client.post(
         "/hmi/action",

@@ -1,9 +1,9 @@
 {
   "routes": [
     {
-      "id": "A_TO_QA",
+      "id": "LINE_A_TO_QA",
       "name": "Line A to QA Lab",
-      "origin_id": "A",
+      "origin_id": "LINE_A",
       "destination_id": "QA",
       "active": true,
       "waypoints": [
@@ -37,9 +37,9 @@
       }
     },
     {
-      "id": "B_TO_QA",
+      "id": "LINE_B_TO_QA",
       "name": "Line B to QA Lab",
-      "origin_id": "B",
+      "origin_id": "LINE_B",
       "destination_id": "QA",
       "active": true,
       "waypoints": [
@@ -73,9 +73,9 @@
       }
     },
     {
-      "id": "C_TO_QA",
+      "id": "LINE_C_TO_QA",
       "name": "Line C to QA Lab",
-      "origin_id": "C",
+      "origin_id": "LINE_C",
       "destination_id": "QA",
       "active": true,
       "waypoints": [
@@ -109,10 +109,10 @@
       }
     },
     {
-      "id": "QA_TO_A",
+      "id": "QA_TO_LINE_A",
       "name": "QA Lab to Line A",
       "origin_id": "QA",
-      "destination_id": "A",
+      "destination_id": "LINE_A",
       "active": true,
       "waypoints": [
         {
@@ -142,10 +142,10 @@
       ]
     },
     {
-      "id": "QA_TO_B",
+      "id": "QA_TO_LINE_B",
       "name": "QA Lab to Line B",
       "origin_id": "QA",
-      "destination_id": "B",
+      "destination_id": "LINE_B",
       "active": true,
       "waypoints": [
         {
@@ -175,10 +175,10 @@
       ]
     },
     {
-      "id": "QA_TO_C",
+      "id": "QA_TO_LINE_C",
       "name": "QA Lab to Line C",
       "origin_id": "QA",
-      "destination_id": "C",
+      "destination_id": "LINE_C",
       "active": true,
       "waypoints": [
         {

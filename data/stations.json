@@ -1,7 +1,7 @@
 {
   "stations": [
     {
-      "id": "A",
+      "id": "LINE_A",
       "name": "Production Line A",
       "station_type": "production_line",
       "x": 0.0,
@@ -11,7 +11,7 @@
       }
     },
     {
-      "id": "B",
+      "id": "LINE_B",
       "name": "Production Line B",
       "station_type": "production_line",
       "x": 0.0,
@@ -21,7 +21,7 @@
       }
     },
     {
-      "id": "C",
+      "id": "LINE_C",
       "name": "Production Line C",
       "station_type": "production_line",
       "x": 0.0,

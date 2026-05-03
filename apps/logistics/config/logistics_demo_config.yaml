@@ -90,6 +90,15 @@ auth:
   qa_token: "__QA_TOKEN__"
   supervisor_token: "__SUPERVISOR_TOKEN__"
 
+ros2:
+  enabled: true
+  scan_topic: "/scan"
+  pose_topic: "/pose"
+  odom_topic: "/odom"
+  odom_frame: "odom"
+  base_frame: "BASE_LINK"
+  odom_publish_hz: 20.0
+
 alerts:
   email_enabled: false
   smtp_host: null

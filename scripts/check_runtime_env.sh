@@ -64,6 +64,18 @@ check_file "data/logistics_routes.json"
 check_file "apps/logistics/api/hmi.py"
 check_file "apps/hmi_agent/protocol.py"
 
+APP_CONFIG="${APP_CONFIG:-apps/logistics/config/logistics_demo_config.yaml}"
+PLACEHOLDER_TOKEN_PATTERN='(__OPERATOR_TOKEN__|__SUPERVISOR_TOKEN__|__QA_TOKEN__|change-me-operator|change-me-supervisor|change-me-qa)'
+if [[ -f "$APP_CONFIG" ]]; then
+  if grep -Eq "$PLACEHOLDER_TOKEN_PATTERN" "$APP_CONFIG"; then
+    warn "auth token placeholders detected in $APP_CONFIG; create a local uncommitted config with real tokens before runtime"
+  else
+    pass "auth token placeholders not detected in $APP_CONFIG"
+  fi
+else
+  warn "auth token placeholder check skipped; config not found: $APP_CONFIG"
+fi
+
 if [[ -f data/audio/arrival.wav ]]; then
   pass "optional arrival audio exists: data/audio/arrival.wav"
 else

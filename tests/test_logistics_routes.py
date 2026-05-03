@@ -23,6 +23,31 @@ def test_loads_default_placeholder_route_file() -> None:
     assert store.find_route("QA", "LINE_A").id == "QA_TO_LINE_A"
 
 
+def test_logistics_station_ids_match_navigator_station_ids() -> None:
+    logistics = json.loads((ROOT / "data" / "logistics_routes.json").read_text(encoding="utf-8"))
+    navigator_stations = json.loads((ROOT / "data" / "stations.json").read_text(encoding="utf-8"))
+
+    logistics_ids = {station["id"] for station in logistics["stations"]}
+    navigator_ids = {station["id"] for station in navigator_stations["stations"]}
+
+    assert logistics_ids == navigator_ids == {"LINE_A", "LINE_B", "LINE_C", "QA", "DOCK"}
+
+
+def test_hmi_allowed_routes_have_matching_navigator_routes() -> None:
+    logistics = json.loads((ROOT / "data" / "logistics_routes.json").read_text(encoding="utf-8"))
+    navigator = json.loads((ROOT / "data" / "routes.json").read_text(encoding="utf-8"))
+
+    navigator_pairs = {
+        (route["origin_id"], route["destination_id"])
+        for route in navigator["routes"]
+    }
+
+    for route in logistics["routes"]:
+        if route["origin_id"] == "*":
+            continue
+        assert (route["origin_id"], route["destination_id"]) in navigator_pairs
+
+
 def test_unknown_station_is_rejected() -> None:
     store = LogisticsRouteStore.load(ROOT / "data" / "logistics_routes.json")
 

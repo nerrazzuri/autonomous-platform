@@ -20,7 +20,7 @@ HMI_IDENTITY = {"robot_id": "robot-1", "screen_id": "screen-front"}
 def make_task_record(
     task_id: str,
     *,
-    station_id: str = "A",
+    station_id: str = "LINE_A",
     destination_id: str = "QA",
     status: str = "queued",
 ):
@@ -298,7 +298,7 @@ def test_ws_confirm_load_success(hmi_ws_app) -> None:
     from fastapi.testclient import TestClient
 
     app, queue, _, event_bus = hmi_ws_app
-    queue.tasks["t1"] = make_task_record("t1", station_id="A", destination_id="QA", status="awaiting_load")
+    queue.tasks["t1"] = make_task_record("t1", station_id="LINE_A", destination_id="QA", status="awaiting_load")
 
     with TestClient(app) as client:
         with client.websocket_connect(f"/hmi/ws?token={TEST_OPERATOR_TOKEN}") as ws:

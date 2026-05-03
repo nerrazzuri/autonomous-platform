@@ -9,6 +9,7 @@ START_ROS_STACK="${START_ROS_STACK:-0}"
 ROS_LAUNCH_ARGS="${ROS_LAUNCH_ARGS:-start_lidar:=false}"
 DRY_RUN="${DRY_RUN:-0}"
 ALLOW_NON_PY310="${ALLOW_NON_PY310:-0}"
+ALLOW_PLACEHOLDER_TOKENS="${ALLOW_PLACEHOLDER_TOKENS:-0}"
 VENV_DIR="${VENV_DIR:-$ROOT_DIR/.venv}"
 ROS_PID=""
 
@@ -52,6 +53,15 @@ fi
 
 [[ -f "$APP_CONFIG" ]] || fail "Config file not found: $APP_CONFIG"
 export QUADRUPED_CONFIG_PATH="${QUADRUPED_CONFIG_PATH:-$APP_CONFIG}"
+
+PLACEHOLDER_TOKEN_PATTERN='(__OPERATOR_TOKEN__|__SUPERVISOR_TOKEN__|__QA_TOKEN__|change-me-operator|change-me-supervisor|change-me-qa)'
+if grep -Eq "$PLACEHOLDER_TOKEN_PATTERN" "$QUADRUPED_CONFIG_PATH"; then
+  if [[ "$ALLOW_PLACEHOLDER_TOKENS" == "1" && "$DRY_RUN" == "1" ]]; then
+    printf 'WARN placeholder auth tokens detected in %s; ALLOW_PLACEHOLDER_TOKENS=1 permits dev-only dry runs\n' "$QUADRUPED_CONFIG_PATH"
+  else
+    fail "Placeholder auth tokens detected in $QUADRUPED_CONFIG_PATH. Create a local uncommitted config with real tokens, or set ALLOW_PLACEHOLDER_TOKENS=1 with DRY_RUN=1 for dev-only dry runs."
+  fi
+fi
 
 if ! "$PYTHON_BIN" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
   if [[ "$DRY_RUN" == "1" ]]; then

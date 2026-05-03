@@ -5,6 +5,7 @@ import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -107,13 +108,21 @@ class FakeSLAMProvider:
         return self.corrected_position
 
 
-def make_route(route_id="A_TO_QA", *, hold=False, target=(1.0, 0.0)):
+class FakePoseBridge:
+    def __init__(self, pose):
+        self.pose = pose
+
+    def get_latest_pose(self):
+        return self.pose
+
+
+def make_route(route_id="LINE_A_TO_QA", *, hold=False, target=(1.0, 0.0)):
     from navigation.route_store import RouteDefinition, Waypoint
 
     return RouteDefinition(
         id=route_id,
         name=route_id.replace("_", " "),
-        origin_id="A",
+        origin_id="LINE_A",
         destination_id="QA",
         waypoints=[
             Waypoint(
@@ -153,10 +162,10 @@ async def test_execute_route_completes_simple_route(navigator_env) -> None:
         waypoint_tolerance_m=0.1,
     )
 
-    result = await navigator.execute_route("A", "QA", task_id="task-1")
+    result = await navigator.execute_route("LINE_A", "QA", task_id="task-1")
 
     assert result.success is True
-    assert result.route_id == "A_TO_QA"
+    assert result.route_id == "LINE_A_TO_QA"
     assert result.completed_waypoints == 1
     assert any(command[0] > 0 for command in heartbeat.commands)
     assert heartbeat.cleared >= 1
@@ -229,11 +238,11 @@ async def test_execute_route_rejects_concurrent_navigation(navigator_env) -> Non
         heartbeat=FakeHeartbeat(),
         waypoint_tolerance_m=0.1,
     )
-    running = asyncio.create_task(navigator.execute_route("A", "QA"))
+    running = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
     await asyncio.sleep(0.02)
 
     with pytest.raises(navigator_module.NavigatorError):
-        await navigator.execute_route("A", "QA")
+        await navigator.execute_route("LINE_A", "QA")
 
     await navigator.cancel_navigation()
     await running
@@ -251,7 +260,7 @@ async def test_unknown_route_raises(navigator_env) -> None:
     from navigation.route_store import RouteNotFoundError
 
     with pytest.raises(RouteNotFoundError):
-        await navigator.execute_route("A", "QA")
+        await navigator.execute_route("LINE_A", "QA")
 
 
 @pytest.mark.asyncio
@@ -264,7 +273,7 @@ async def test_navigation_fails_when_no_state_available(navigator_env) -> None:
         heartbeat=FakeHeartbeat(),
     )
 
-    result = await navigator.execute_route("A", "QA")
+    result = await navigator.execute_route("LINE_A", "QA")
 
     assert result.success is False
     assert "state" in result.message.lower()
@@ -298,6 +307,72 @@ async def test_get_state_uses_slam_corrected_position_when_configured(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_get_state_enables_real_slam_provider_from_config(monkeypatch, navigator_env) -> None:
+    navigator_module, _ = navigator_env
+    import shared.ros2 as ros2_module
+    import shared.navigation.slam as slam_module
+    from shared.navigation.slam import SLAMProvider
+
+    config = navigator_module.get_config()
+    monkeypatch.setattr(
+        navigator_module,
+        "get_config",
+        lambda: config.model_copy(update={"navigation": config.navigation.model_copy(update={"position_source": "slam"})}),
+    )
+    monkeypatch.setattr(
+        slam_module,
+        "slam_provider",
+        SLAMProvider(state_monitor=FakeStateMonitor([make_state(0.0, 0.0, yaw=0.0)]), enabled=False),
+    )
+    pose = SimpleNamespace(
+        pose=SimpleNamespace(
+            pose=SimpleNamespace(
+                position=SimpleNamespace(x=8.0, y=9.0),
+                orientation=SimpleNamespace(x=0.0, y=0.0, z=0.0, w=1.0),
+            ),
+            covariance=[0.0] * 36,
+        )
+    )
+    monkeypatch.setattr(ros2_module, "_bridge", FakePoseBridge(pose))
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([make_route()]),
+        state_monitor=FakeStateMonitor([make_state(1.0, 2.0, yaw=0.5)]),
+        heartbeat=FakeHeartbeat(),
+    )
+
+    state = await navigator._get_state_or_poll()
+
+    assert state is not None
+    assert state.position == (8.0, 9.0, 0.0)
+    assert state.rpy == (0.0, 0.0, 0.0)
+
+
+@pytest.mark.asyncio
+async def test_get_state_slam_config_falls_back_to_odometry_without_pose(monkeypatch, navigator_env) -> None:
+    navigator_module, _ = navigator_env
+    import shared.ros2 as ros2_module
+
+    config = navigator_module.get_config()
+    monkeypatch.setattr(
+        navigator_module,
+        "get_config",
+        lambda: config.model_copy(update={"navigation": config.navigation.model_copy(update={"position_source": "slam"})}),
+    )
+    monkeypatch.setattr(ros2_module, "_bridge", None)
+    navigator = navigator_module.Navigator(
+        route_store=FakeRouteStore([make_route()]),
+        state_monitor=FakeStateMonitor([make_state(1.0, 2.0, yaw=0.5)]),
+        heartbeat=FakeHeartbeat(),
+    )
+
+    state = await navigator._get_state_or_poll()
+
+    assert state is not None
+    assert state.position == (1.0, 2.0, 0.0)
+    assert state.rpy == (0.0, 0.0, 0.5)
+
+
+@pytest.mark.asyncio
 async def test_waypoint_hold_waits_for_confirmation_event(navigator_env) -> None:
     navigator_module, event_bus = navigator_env
     route = make_route(hold=True, target=(0.0, 0.0))
@@ -308,7 +383,7 @@ async def test_waypoint_hold_waits_for_confirmation_event(navigator_env) -> None
         waypoint_tolerance_m=0.1,
     )
 
-    task = asyncio.create_task(navigator.execute_route("A", "QA", task_id="task-hold"))
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA", task_id="task-hold"))
     await asyncio.sleep(0.05)
 
     assert task.done() is False
@@ -334,7 +409,7 @@ async def test_robot_scoped_human_confirmation_ignores_other_robot(navigator_env
         robot_id="robot-1",
     )
 
-    task = asyncio.create_task(navigator.execute_route("A", "QA", task_id="task-hold"))
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA", task_id="task-hold"))
     await asyncio.sleep(0.05)
 
     from core.event_bus import EventName
@@ -363,7 +438,7 @@ async def test_cancel_navigation_stops_route(navigator_env) -> None:
         heartbeat=heartbeat,
         waypoint_tolerance_m=0.1,
     )
-    task = asyncio.create_task(navigator.execute_route("A", "QA"))
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
     await asyncio.sleep(0.02)
 
     await navigator.cancel_navigation("test cancel")
@@ -386,7 +461,7 @@ async def test_obstacle_detected_blocks_motion(navigator_env) -> None:
         waypoint_tolerance_m=0.1,
         obstacle_hold_timeout_seconds=1.0,
     )
-    task = asyncio.create_task(navigator.execute_route("A", "QA"))
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
     await asyncio.sleep(0.02)
 
     from core.event_bus import EventName
@@ -416,7 +491,7 @@ async def test_obstacle_cleared_resumes_navigation(navigator_env) -> None:
     from core.event_bus import EventName
 
     event_bus.subscribe(EventName.NAVIGATION_RESUMED, lambda event: resumed_events.append(event))
-    task = asyncio.create_task(navigator.execute_route("A", "QA"))
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
     await asyncio.sleep(0.02)
     await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
     await event_bus.wait_until_idle(timeout=1.0)
@@ -447,7 +522,7 @@ async def test_robot_scoped_obstacle_event_ignores_other_robot(navigator_env) ->
 
     from core.event_bus import EventName
 
-    task = asyncio.create_task(navigator.execute_route("A", "QA"))
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
     await asyncio.sleep(0.02)
     await event_bus.publish(EventName.OBSTACLE_DETECTED, {"robot_id": "robot-2"})
     await event_bus.wait_until_idle(timeout=1.0)
@@ -470,7 +545,7 @@ async def test_obstacle_timeout_returns_blocked_result(navigator_env) -> None:
     )
     from core.event_bus import EventName
 
-    task = asyncio.create_task(navigator.execute_route("A", "QA"))
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
     await asyncio.sleep(0.02)
     await event_bus.publish(EventName.OBSTACLE_DETECTED, {})
     await event_bus.wait_until_idle(timeout=1.0)
@@ -494,7 +569,7 @@ async def test_heartbeat_target_cleared_on_exit(navigator_env) -> None:
         waypoint_tolerance_m=0.1,
     )
 
-    await navigator.execute_route("A", "QA")
+    await navigator.execute_route("LINE_A", "QA")
 
     assert heartbeat.commands[-1][0:3] == (0.0, 0.0, 0.0)
 
@@ -525,7 +600,7 @@ async def test_published_events_include_robot_id(navigator_env) -> None:
     )
     event_bus.subscribe(EventName.NAVIGATION_COMPLETED, callback, subscriber_name="test-nav-completed")
 
-    result = await navigator.execute_route("A", "QA", task_id="task-1")
+    result = await navigator.execute_route("LINE_A", "QA", task_id="task-1")
     await event_bus.wait_until_idle(timeout=1.0)
 
     assert result.success is True
@@ -547,10 +622,10 @@ async def test_current_route_id_and_completed_waypoint_count(navigator_env) -> N
         heartbeat=FakeHeartbeat(),
         waypoint_tolerance_m=0.1,
     )
-    task = asyncio.create_task(navigator.execute_route("A", "QA"))
+    task = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
     await asyncio.sleep(0.05)
 
-    assert navigator.current_route_id() == "A_TO_QA"
+    assert navigator.current_route_id() == "LINE_A_TO_QA"
     assert navigator.completed_waypoint_count() == 1
 
     await navigator.cancel_navigation()

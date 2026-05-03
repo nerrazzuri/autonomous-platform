@@ -103,7 +103,7 @@ task_response="$(request_json \
   "POST" \
   "/tasks" \
   "$OPERATOR_TOKEN" \
-  '{"station_id":"A","destination_id":"QA","priority":1,"notes":"Manual E2E smoke test"}' \
+  '{"station_id":"LINE_A","destination_id":"QA","priority":1,"notes":"Manual E2E smoke test"}' \
   "200")"
 
 task_id="$(parse_json_field "$task_response" "id" || true)"
