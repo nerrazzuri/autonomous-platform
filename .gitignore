@@ -8,5 +8,8 @@ logs/*.log
 # Generated runtime/test audit data
 data/audit/
 
+# Local route backups (created by backup_routes.sh)
+data/backups/
+
 # Local coding-agent planning artifacts
 docs/superpowers/plans/

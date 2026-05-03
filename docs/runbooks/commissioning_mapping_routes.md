@@ -188,6 +188,75 @@ LINE_A, LINE_B, LINE_C, QA, DOCK
 
 `data/logistics_routes.json` is an allowlist, not a navigation waypoint source.
 
+## Commissioning Helper Scripts
+
+The scripts below wrap the backend commissioning API so a site engineer does
+not need to type raw curl commands. The backend must be running and localization
+must be active for any pose-dependent call to succeed.
+
+### Environment
+
+```bash
+export API_BASE_URL=http://127.0.0.1:8080
+export SUPERVISOR_TOKEN=<your-local-supervisor-token>
+```
+
+Do not commit the token. Keep it in your local shell environment only.
+
+### Quick reference
+
+```bash
+# Check current pose
+./scripts/commissioning/check_pose.sh
+
+# Back up route files before a capture session
+./scripts/commissioning/backup_routes.sh before-commissioning
+
+# Mark stations (move robot manually to each location first)
+./scripts/commissioning/mark_station.sh LINE_A
+./scripts/commissioning/mark_station.sh LINE_B
+./scripts/commissioning/mark_station.sh LINE_C
+./scripts/commissioning/mark_station.sh QA
+./scripts/commissioning/mark_station.sh DOCK
+
+# Add route waypoints (move robot manually to each position first)
+./scripts/commissioning/add_waypoint.sh LINE_A_TO_QA line_a_pickup --hold awaiting_load
+./scripts/commissioning/add_waypoint.sh LINE_A_TO_QA corridor_1
+./scripts/commissioning/add_waypoint.sh LINE_A_TO_QA qa_dropoff --hold awaiting_unload
+
+# Mark route ready (requires at least one waypoint)
+./scripts/commissioning/set_route_ready.sh LINE_A_TO_QA
+
+# Restore if bad capture
+FORCE=1 ./scripts/commissioning/restore_routes.sh latest
+```
+
+### Script notes
+
+- **These scripts do not move the robot.** They only capture the current pose
+  exposed by the backend API.
+- Move the robot manually and slowly to each position before calling
+  `mark_station.sh` or `add_waypoint.sh`.
+- **Backend must be running** at `API_BASE_URL` before any script is called.
+- **Localization must be running** for a meaningful pose. The backend returns
+  `409 Current pose unavailable` if no live pose is available.
+- All scripts support `DRY_RUN=1` to print the planned API call without
+  executing.
+- Back up route files before every capture session with `backup_routes.sh`.
+- `restore_routes.sh latest` creates an automatic safety backup of current
+  files before overwriting.
+
+### Environment variables
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `API_BASE_URL` | `http://127.0.0.1:8080` | Backend URL |
+| `SUPERVISOR_TOKEN` | _(required)_ | Auth token; must be exported |
+| `DATA_DIR` | `<project>/data` | Source of route JSON files |
+| `BACKUP_DIR` | `<project>/data/backups` | Backup destination |
+| `DRY_RUN` | `0` | Print commands without executing |
+| `FORCE` | `0` | Skip confirmation prompt in `restore_routes.sh` |
+
 ## Safety Notes
 
 - These scripts do not command robot movement.
