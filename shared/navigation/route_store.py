@@ -3,6 +3,7 @@ from __future__ import annotations
 """File-backed registry for quadruped routes and stations."""
 
 import asyncio
+import hashlib
 import json
 import math
 from dataclasses import dataclass, field, replace
@@ -234,8 +235,8 @@ class RouteStore:
         )
         self._routes: dict[str, RouteDefinition] = {}
         self._stations: dict[str, StationDefinition] = {}
-        self._routes_mtime: float | None = None
-        self._stations_mtime: float | None = None
+        self._routes_signature: tuple[int, int, str] | None = None
+        self._stations_signature: tuple[int, int, str] | None = None
         self._lock = asyncio.Lock()
 
     async def load(self) -> None:
@@ -245,8 +246,8 @@ class RouteStore:
         async with self._lock:
             self._routes = {route.id: route for route in routes}
             self._stations = {station.id: station for station in stations}
-            self._routes_mtime = self._file_mtime(self._routes_file)
-            self._stations_mtime = self._file_mtime(self._stations_file)
+            self._routes_signature = self._file_signature(self._routes_file)
+            self._stations_signature = self._file_signature(self._stations_file)
 
         await self._persist_loaded_routes(routes)
         self._publish_event(EventName.SYSTEM_STARTED, {"module": "route_store", "action": "loaded"})
@@ -264,9 +265,9 @@ class RouteStore:
         if not self._hot_reload_enabled:
             return False
 
-        current_routes_mtime = self._file_mtime(self._routes_file)
-        current_stations_mtime = self._file_mtime(self._stations_file)
-        if current_routes_mtime == self._routes_mtime and current_stations_mtime == self._stations_mtime:
+        current_routes_signature = self._file_signature(self._routes_file)
+        current_stations_signature = self._file_signature(self._stations_file)
+        if current_routes_signature == self._routes_signature and current_stations_signature == self._stations_signature:
             return False
 
         await self.load()
@@ -284,7 +285,7 @@ class RouteStore:
         self._routes_file.parent.mkdir(parents=True, exist_ok=True)
         self._routes_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         async with self._lock:
-            self._routes_mtime = self._file_mtime(self._routes_file)
+            self._routes_signature = self._file_signature(self._routes_file)
         logger.info("Route definitions saved", extra={"routes_file": str(self._routes_file)})
 
     async def save_stations(self) -> None:
@@ -296,7 +297,7 @@ class RouteStore:
         self._stations_file.parent.mkdir(parents=True, exist_ok=True)
         self._stations_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         async with self._lock:
-            self._stations_mtime = self._file_mtime(self._stations_file)
+            self._stations_signature = self._file_signature(self._stations_file)
         logger.info("Station definitions saved", extra={"stations_file": str(self._stations_file)})
 
     async def list_routes(self, active: bool | None = None) -> list[RouteDefinition]:
@@ -468,11 +469,13 @@ class RouteStore:
             logger.debug("Route store event publish skipped", extra={"event_name": event_name.value})
 
     @staticmethod
-    def _file_mtime(path: Path) -> float | None:
+    def _file_signature(path: Path) -> tuple[int, int, str] | None:
         if not path.exists():
             return None
         try:
-            return path.stat().st_mtime
+            stat = path.stat()
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            return (stat.st_mtime_ns, stat.st_size, digest)
         except OSError:
             return None
 

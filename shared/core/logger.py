@@ -150,7 +150,10 @@ def get_logger(module_name: str) -> logging.Logger:
 
     if not _LOGGING_CONFIGURED:
         setup_logging()
-    return logging.getLogger(module_name)
+    logger = logging.getLogger(module_name)
+    logger.disabled = False
+    logger.propagate = True
+    return logger
 
 
 class JsonLogFormatter(logging.Formatter):

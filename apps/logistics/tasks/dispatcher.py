@@ -478,9 +478,6 @@ class Dispatcher:
         task.add_done_callback(lambda completed_task, rid=resolved_robot_id: self._on_dispatch_task_done(rid, completed_task))
 
     def _on_dispatch_task_done(self, robot_id: str, task: asyncio.Task[bool]) -> None:
-        current_task = self._dispatch_tasks.get(robot_id)
-        if current_task is task:
-            self._dispatch_tasks.pop(robot_id, None)
         try:
             task.result()
         except Exception:
