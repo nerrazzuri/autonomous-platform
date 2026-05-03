@@ -28,6 +28,7 @@ from shared.provisioning.provision_models import ProvisionRequest, WifiNetwork
 from shared.quadruped.robot_registry import RobotNotFoundError, get_robot_registry
 from shared.quadruped.sdk_adapter import SDKAdapter, get_sdk_adapter
 from shared.quadruped.state_monitor import QuadrupedState, StateMonitor, get_state_monitor
+from apps.logistics.api.commissioning import create_commissioning_router
 from apps.logistics.api.hmi import create_hmi_router
 from apps.logistics.runtime.startup import shutdown_system, startup_system
 from apps.logistics.tasks.dispatcher import Dispatcher, get_dispatcher
@@ -691,6 +692,7 @@ def create_app() -> FastAPI:
     application.add_api_websocket_route("/ws", websocket_endpoint)
     application.mount("/ui", StaticFiles(directory=ui_directory), name="ui")
     application.include_router(create_hmi_router())
+    application.include_router(create_commissioning_router())
 
     @application.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
@@ -1313,6 +1315,7 @@ __all__ = [
     "UpdateRouteRequest",
     "app",
     "create_app",
+    "create_commissioning_router",
     "create_hmi_router",
     "get_dispatcher_dep",
     "get_route_store_dep",

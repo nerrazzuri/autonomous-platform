@@ -131,7 +131,7 @@ Full localization is not proven until `/scan`, `/odom`, TF `odom -> BASE_LINK`, 
 
 ## Marking Stations
 
-For now, manually move the robot to each station and record `/pose`:
+Manually move the robot to each station and confirm `/pose` is live before capture:
 
 - `LINE_A`
 - `LINE_B`
@@ -139,7 +139,40 @@ For now, manually move the robot to each station and record `/pose`:
 - `QA`
 - `DOCK`
 
-Future Module 12B can add a backend API to mark the current pose. Until then, record pose values carefully and review them before updating route files.
+With the backend running and a supervisor token in your local, uncommitted config, mark the current pose:
+
+```bash
+curl -X POST "http://localhost:8080/commissioning/stations/LINE_A/mark-current" \
+  -H "Authorization: Bearer <supervisor-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"label":"Production Line A"}'
+```
+
+Repeat for `LINE_B`, `LINE_C`, `QA`, and `DOCK`. The API returns `409 Current pose unavailable` if the backend cannot read a real current pose; do not enter placeholder coordinates to bypass this.
+
+## Capturing Route Waypoints
+
+After localization is stable, move the robot manually through the intended path and add each current pose as a waypoint:
+
+```bash
+curl -X POST "http://localhost:8080/commissioning/routes/LINE_A_TO_QA/waypoints/add-current" \
+  -H "Authorization: Bearer <supervisor-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"waypoint_id":"corridor_1","hold":false,"hold_reason":null}'
+```
+
+Use descriptive waypoint IDs such as `line_a_exit`, `corridor_1`, or `qa_entry`. Capture enough waypoints for the future route executor to follow the aisle safely.
+
+When a route has been reviewed and has at least one real waypoint, clear the placeholder flag:
+
+```bash
+curl -X POST "http://localhost:8080/commissioning/routes/LINE_A_TO_QA/placeholder" \
+  -H "Authorization: Bearer <supervisor-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"placeholder":false}'
+```
+
+The API rejects `placeholder=false` when the route has no waypoints.
 
 ## Updating Route Files
 
