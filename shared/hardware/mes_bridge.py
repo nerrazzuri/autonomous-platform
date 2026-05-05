@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import inspect
 from typing import Any
 from uuid import uuid4
 
 from shared.core.logger import get_logger
-from apps.logistics.tasks.queue import TaskQueue, get_task_queue
 
 
 logger = get_logger(__name__)
+TaskSubmitter = Any
 
 
 class MESBridgeError(Exception):
@@ -82,12 +83,17 @@ class MESEvent:
 class MESBridge:
     """Phase 1 stub bridge that validates payloads and submits queue tasks only."""
 
-    def __init__(self, task_queue: TaskQueue | None = None, enabled: bool = False) -> None:
-        self._task_queue = task_queue or get_task_queue()
+    def __init__(self, task_queue: Any | None = None, task_submitter: TaskSubmitter | None = None, enabled: bool = False) -> None:
+        self._task_submitter = task_submitter
+        if self._task_submitter is None and task_queue is not None:
+            self._task_submitter = getattr(task_queue, "submit_task", None)
         self._enabled = bool(enabled)
         self._running = False
         self._submitted_count = 0
         self._last_error: str | None = None
+
+    def set_task_submitter(self, task_submitter: TaskSubmitter | None) -> None:
+        self._task_submitter = task_submitter
 
     async def start_listener(self) -> None:
         if self._running:
@@ -104,14 +110,24 @@ class MESBridge:
     async def submit_mes_event(self, payload: dict[str, Any]) -> MESEvent:
         normalized_payload = _normalize_payload(payload)
         event = self._build_event(normalized_payload)
+        if self._task_submitter is None:
+            logger.info(
+                "MES bridge event validated without task submission",
+                extra={"event_id": event.event_id, "station_id": event.station_id, "enabled": self._enabled},
+            )
+            self._last_error = None
+            return event
+
         try:
-            await self._task_queue.submit_task(
+            result = self._task_submitter(
                 station_id=event.station_id,
                 destination_id=event.destination_id,
                 batch_id=event.batch_id,
                 priority=event.priority,
                 notes="Submitted by MES bridge",
             )
+            if inspect.isawaitable(result):
+                await result
         except Exception as exc:
             self._last_error = str(exc)
             logger.warning(

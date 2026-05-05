@@ -208,3 +208,43 @@ async def test_enabled_true_still_safe_stub(mes_module, monkeypatch: pytest.Monk
 
 def test_global_get_mes_bridge_returns_bridge(mes_module) -> None:
     assert mes_module.get_mes_bridge() is mes_module.mes_bridge
+
+
+def test_shared_mes_bridge_has_no_logistics_import() -> None:
+    source = (ROOT / "shared" / "hardware" / "mes_bridge.py").read_text(encoding="utf-8")
+
+    assert "apps.logistics" not in source
+
+
+@pytest.mark.asyncio
+async def test_submit_mes_event_without_submitter_is_noop(mes_module) -> None:
+    bridge = mes_module.MESBridge()
+
+    event = await bridge.submit_mes_event({"event_id": "MES-004", "station_id": "A"})
+
+    assert event.event_id == "MES-004"
+    assert bridge.submitted_count() == 0
+    assert bridge.last_error() is None
+
+
+@pytest.mark.asyncio
+async def test_task_submitter_callback_submits_task(mes_module) -> None:
+    calls: list[dict[str, object]] = []
+
+    async def submitter(**kwargs):
+        calls.append(dict(kwargs))
+
+    bridge = mes_module.MESBridge(task_submitter=submitter)
+
+    await bridge.submit_mes_event({"event_id": "MES-005", "station_id": "A", "destination_id": "QA"})
+
+    assert calls == [
+        {
+            "station_id": "A",
+            "destination_id": "QA",
+            "batch_id": None,
+            "priority": 0,
+            "notes": "Submitted by MES bridge",
+        }
+    ]
+    assert bridge.submitted_count() == 1
