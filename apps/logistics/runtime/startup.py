@@ -11,6 +11,7 @@ from shared.core.config import get_config
 from shared.core.event_bus import get_event_bus
 from shared.core.logger import get_logger
 from shared.hardware.speaker import SpeakerAlert
+from shared.provisioning.roles import register_role
 from shared.runtime import base_startup
 
 
@@ -39,6 +40,7 @@ def _retarget_logistics_singletons(navigator, state_monitor) -> None:
 
 
 base_startup.register_singleton_retarget_hook(_retarget_logistics_singletons)
+register_role("logistics")
 
 
 async def _run_shutdown_steps(steps: list[tuple[str, Callable[[], Awaitable[None]]]]) -> list[tuple[str, str]]:

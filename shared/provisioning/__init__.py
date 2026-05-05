@@ -13,6 +13,7 @@ from shared.provisioning.provision_models import (
     RobotStatus,
     WifiNetwork,
 )
+from shared.provisioning.roles import get_registered_roles, register_role, unregister_role
 
 __all__ = [
     "ProvisioningError",
@@ -26,4 +27,7 @@ __all__ = [
     "find_ip_by_mac",
     "patch_sdk_config",
     "provision_dog",
+    "register_role",
+    "unregister_role",
+    "get_registered_roles",
 ]

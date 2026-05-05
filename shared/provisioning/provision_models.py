@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
-_VALID_ROLES = {"logistics", "patrol"}
+from shared.provisioning.roles import validate_role
 
 
 def _require_non_empty_string(value: object, field_name: str) -> str:
@@ -13,10 +12,7 @@ def _require_non_empty_string(value: object, field_name: str) -> str:
 
 
 def _validate_role(value: object) -> str:
-    role = _require_non_empty_string(value, "role")
-    if role not in _VALID_ROLES:
-        raise ValueError("role must be either 'logistics' or 'patrol'")
-    return role
+    return validate_role(_require_non_empty_string(value, "role"))
 
 
 @dataclass(frozen=True)

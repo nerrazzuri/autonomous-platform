@@ -11,6 +11,7 @@ from apps.patrol.tasks.patrol_scheduler import get_patrol_scheduler
 from apps.patrol.tasks.patrol_watchdog import get_patrol_watchdog
 from shared.core.config import get_config
 from shared.core.logger import get_logger, setup_logging
+from shared.provisioning.roles import register_role
 from shared.runtime import base_startup
 
 
@@ -32,6 +33,7 @@ def _retarget_patrol_singletons(navigator, state_monitor) -> None:
 
 
 base_startup.register_singleton_retarget_hook(_retarget_patrol_singletons)
+register_role("patrol")
 
 
 async def _run_shutdown_steps(steps: list[tuple[str, Callable[[], Awaitable[None]]]]) -> list[tuple[str, str]]:
