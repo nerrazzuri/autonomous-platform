@@ -79,7 +79,7 @@ class HeartbeatController:
             self._handle_estop,
             subscriber_name="heartbeat_estop_handler",
         )
-        self._task = asyncio.create_task(self._run_loop(), name="sumitomo-heartbeat")
+        self._task = asyncio.create_task(self._run_loop(), name="platform-heartbeat")
         self._safe_publish(EventName.SYSTEM_STARTED, {"module": "heartbeat"})
         logger.info("Heartbeat controller started", extra={"module_name": "heartbeat"})
 

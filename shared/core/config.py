@@ -14,7 +14,7 @@ class ConfigError(Exception):
 
 
 class AppSection(BaseModel):
-    name: str = "sumitomo-quadruped-logistics"
+    name: str = "agibot-quadruped-platform"
     environment: str = "development"
     timezone: str = "Asia/Singapore"
 

@@ -130,7 +130,7 @@ class ObstacleDetector:
             return
 
         self._stop_event = asyncio.Event()
-        self._task = asyncio.create_task(self._run_loop(), name="sumitomo-obstacle-detector")
+        self._task = asyncio.create_task(self._run_loop(), name="platform-obstacle-detector")
         logger.info("Obstacle detector started", extra={"enabled": self._enabled})
 
     async def stop(self) -> None:

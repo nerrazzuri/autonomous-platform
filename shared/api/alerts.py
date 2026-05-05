@@ -260,7 +260,7 @@ class AlertManager:
         email_message = EmailMessage()
         email_message["Subject"] = subject
         email_message["To"] = alerts_config.supervisor_email
-        email_message["From"] = alerts_config.smtp_username or "sumitomo-quadruped@localhost"
+        email_message["From"] = alerts_config.smtp_username or "agibot-quadruped@localhost"
         email_message.set_content("\n".join(body_lines))
 
         with smtplib.SMTP(alerts_config.smtp_host, alerts_config.smtp_port) as smtp:

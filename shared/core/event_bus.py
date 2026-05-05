@@ -165,7 +165,7 @@ class EventBus:
         if self._dispatcher_task and not self._dispatcher_task.done():
             return
 
-        self._dispatcher_task = asyncio.create_task(self._dispatch_loop(), name="sumitomo-event-bus")
+        self._dispatcher_task = asyncio.create_task(self._dispatch_loop(), name="platform-event-bus")
         logger.info("Event bus started", extra={"event_name": EventName.SYSTEM_STARTED.value})
 
     async def stop(self) -> None:

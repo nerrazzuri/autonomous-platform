@@ -19,7 +19,7 @@ MASKED_VALUE = "***MASKED***"
 _SECRET_KEY_PARTS = ("token", "password", "secret", "api_key", "authorization", "bearer", "key")
 _STANDARD_LOG_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__.keys()) | {"message", "asctime"}
 _RUNTIME_CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
-    "sumitomo_runtime_context",
+    "platform_runtime_context",
     default={"task_id": None, "quadruped_state": None},
 )
 _LOGGING_CONFIGURED = False
@@ -95,13 +95,13 @@ def _resolve_log_level(level_name: str | int | None) -> int:
 
 def _remove_owned_handlers(root_logger: logging.Logger) -> None:
     for handler in list(root_logger.handlers):
-        if getattr(handler, "_sumitomo_logger_handler", False):
+        if getattr(handler, "_platform_logger_handler", False):
             root_logger.removeHandler(handler)
             handler.close()
 
 
 def _mark_owned(handler: logging.Handler) -> logging.Handler:
-    handler._sumitomo_logger_handler = True  # type: ignore[attr-defined]
+    handler._platform_logger_handler = True  # type: ignore[attr-defined]
     return handler
 
 
@@ -200,7 +200,7 @@ class JsonLogFormatter(logging.Formatter):
                 continue
             if key in {"event_name", "task_id", "quadruped_state"}:
                 continue
-            if key.startswith("_sumitomo_"):
+            if key.startswith("_platform_"):
                 continue
             extra_fields[key] = _sanitize_log_value(value, key=key)
         return extra_fields

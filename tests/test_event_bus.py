@@ -29,7 +29,7 @@ def make_logger_config(tmp_path: Path) -> AppConfig:
 def reset_owned_handlers() -> None:
     root_logger = logging.getLogger()
     for handler in list(root_logger.handlers):
-        if getattr(handler, "_sumitomo_logger_handler", False):
+        if getattr(handler, "_platform_logger_handler", False):
             root_logger.removeHandler(handler)
             handler.close()
 
