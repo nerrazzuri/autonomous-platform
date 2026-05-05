@@ -1,3 +1,9 @@
+"""Backward-compatibility alias for apps.logistics.tasks.watchdog.
+
+This shim exists so legacy imports continue to work.
+New code should import from apps.logistics.tasks.watchdog directly.
+"""
+
 from apps.logistics.tasks import watchdog as _impl
 import sys as _sys
 

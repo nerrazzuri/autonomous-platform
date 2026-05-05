@@ -30,7 +30,9 @@ def load_yaml(path: Path) -> dict[str, object]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_dry_run_succeeds_without_calling_backend(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_dry_run_succeeds_without_calling_backend(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     module = load_cli_module()
     called = False
 
@@ -39,7 +41,7 @@ def test_dry_run_succeeds_without_calling_backend(tmp_path: Path, capsys: pytest
         called = True
         raise AssertionError("provision_dog should not be called during dry-run")
 
-    module.provision_backend.provision_dog = fake_provision_dog
+    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
     robots_yaml_path = tmp_path / "robots.yaml"
 
     exit_code = module.main(
@@ -74,7 +76,7 @@ def test_dry_run_succeeds_without_calling_backend(tmp_path: Path, capsys: pytest
 
 
 def test_successful_mocked_provisioning_writes_yaml(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = load_cli_module()
     robots_yaml_path = tmp_path / "robots.yaml"
@@ -89,7 +91,7 @@ def test_successful_mocked_provisioning_writes_yaml(
             role="logistics",
         )
 
-    module.provision_backend.provision_dog = fake_provision_dog
+    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
 
     exit_code = module.main(
         [
@@ -126,7 +128,7 @@ def test_successful_mocked_provisioning_writes_yaml(
 
 
 def test_failed_provisioning_result_exits_non_zero_and_does_not_write_yaml(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = load_cli_module()
     robots_yaml_path = tmp_path / "robots.yaml"
@@ -137,7 +139,7 @@ def test_failed_provisioning_result_exits_non_zero_and_does_not_write_yaml(
             message="Robot refused provisioning",
         )
 
-    module.provision_backend.provision_dog = fake_provision_dog
+    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
 
     exit_code = module.main(
         [
@@ -166,14 +168,14 @@ def test_failed_provisioning_result_exits_non_zero_and_does_not_write_yaml(
 
 
 def test_not_implemented_backend_exits_non_zero_with_clear_message(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = load_cli_module()
 
     def fake_provision_dog(_request):
         raise NotImplementedError("not yet wired")
 
-    module.provision_backend.provision_dog = fake_provision_dog
+    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
 
     exit_code = module.main(
         [
@@ -228,7 +230,7 @@ def test_invalid_role_exits_non_zero(capsys: pytest.CaptureFixture[str]) -> None
 
 
 def test_explicit_robot_id_and_display_name_are_passed_through_to_yaml(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = load_cli_module()
     robots_yaml_path = tmp_path / "robots.yaml"
@@ -242,7 +244,7 @@ def test_explicit_robot_id_and_display_name_are_passed_through_to_yaml(
             role="patrol",
         )
 
-    module.provision_backend.provision_dog = fake_provision_dog
+    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
 
     exit_code = module.main(
         [

@@ -11,10 +11,36 @@ from shared.core.config import get_config
 from shared.core.event_bus import get_event_bus
 from shared.core.logger import get_logger
 from shared.hardware.speaker import SpeakerAlert
+from shared.provisioning.roles import register_role
 from shared.runtime import base_startup
 
 
 logger = get_logger(__name__)
+
+
+def _retarget_logistics_singletons(navigator, state_monitor) -> None:
+    dispatcher = get_dispatcher()
+    battery_manager = get_battery_manager()
+    watchdog = get_watchdog()
+
+    if hasattr(dispatcher, "_navigator"):
+        dispatcher._navigator = navigator
+    if hasattr(dispatcher, "_state_monitor"):
+        dispatcher._state_monitor = state_monitor
+
+    if hasattr(battery_manager, "_state_monitor"):
+        battery_manager._state_monitor = state_monitor
+    if hasattr(battery_manager, "_dispatcher"):
+        battery_manager._dispatcher = dispatcher
+
+    if hasattr(watchdog, "_state_monitor"):
+        watchdog._state_monitor = state_monitor
+    if hasattr(watchdog, "_dispatcher"):
+        watchdog._dispatcher = dispatcher
+
+
+base_startup.register_singleton_retarget_hook(_retarget_logistics_singletons)
+register_role("logistics")
 
 
 async def _run_shutdown_steps(steps: list[tuple[str, Callable[[], Awaitable[None]]]]) -> list[tuple[str, str]]:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 """Shared platform startup wiring with no app-specific dependencies."""
 
-import sys
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 import math
@@ -33,12 +32,29 @@ import shared.quadruped.state_monitor as state_monitor_module
 
 logger = get_logger(__name__)
 
+SingletonRetargetHook = Callable[[Any, Any], None]
+_singleton_retarget_hooks: list[SingletonRetargetHook] = []
+
 _DEFAULT_SINGLETONS = {
     "sdk_adapter": sdk_adapter_module.sdk_adapter,
     "heartbeat_controller": heartbeat_module.heartbeat_controller,
     "state_monitor": state_monitor_module.state_monitor,
     "navigator": navigator_module.navigator,
 }
+
+
+def register_singleton_retarget_hook(hook: SingletonRetargetHook) -> None:
+    if hook not in _singleton_retarget_hooks:
+        _singleton_retarget_hooks.append(hook)
+
+
+def unregister_singleton_retarget_hook(hook: SingletonRetargetHook) -> None:
+    if hook in _singleton_retarget_hooks:
+        _singleton_retarget_hooks.remove(hook)
+
+
+def clear_singleton_retarget_hooks() -> None:
+    _singleton_retarget_hooks.clear()
 
 
 async def _run_shutdown_steps(steps: list[tuple[str, Callable[[], Awaitable[None]]]]) -> list[tuple[str, str]]:
@@ -125,35 +141,11 @@ def _restore_default_component_singletons() -> None:
 
 
 def _retarget_existing_singleton_consumers(navigator: Any, state_monitor: Any) -> None:
-    dispatcher_module = sys.modules.get("apps.logistics.tasks.dispatcher")
-    if dispatcher_module is not None and hasattr(dispatcher_module, "dispatcher"):
-        dispatcher = dispatcher_module.dispatcher
-        if hasattr(dispatcher, "_navigator"):
-            dispatcher._navigator = navigator
-        if hasattr(dispatcher, "_state_monitor"):
-            dispatcher._state_monitor = state_monitor
-
-    battery_manager_module = sys.modules.get("apps.logistics.tasks.battery_manager")
-    if battery_manager_module is not None and hasattr(battery_manager_module, "battery_manager"):
-        battery_manager = battery_manager_module.battery_manager
-        if hasattr(battery_manager, "_state_monitor"):
-            battery_manager._state_monitor = state_monitor
-        if hasattr(battery_manager, "_dispatcher") and dispatcher_module is not None and hasattr(dispatcher_module, "dispatcher"):
-            battery_manager._dispatcher = dispatcher_module.dispatcher
-
-    watchdog_module = sys.modules.get("apps.logistics.tasks.watchdog")
-    if watchdog_module is not None and hasattr(watchdog_module, "watchdog"):
-        watchdog = watchdog_module.watchdog
-        if hasattr(watchdog, "_state_monitor"):
-            watchdog._state_monitor = state_monitor
-        if hasattr(watchdog, "_dispatcher") and dispatcher_module is not None and hasattr(dispatcher_module, "dispatcher"):
-            watchdog._dispatcher = dispatcher_module.dispatcher
-
-    patrol_dispatcher_module = sys.modules.get("apps.patrol.tasks.patrol_dispatcher")
-    if patrol_dispatcher_module is not None and hasattr(patrol_dispatcher_module, "patrol_dispatcher"):
-        patrol_dispatcher = patrol_dispatcher_module.patrol_dispatcher
-        if hasattr(patrol_dispatcher, "_navigator"):
-            patrol_dispatcher._navigator = navigator
+    for hook in list(_singleton_retarget_hooks):
+        try:
+            hook(navigator, state_monitor)
+        except Exception:
+            logger.exception("Singleton retarget hook failed", extra={"hook": getattr(hook, "__name__", repr(hook))})
 
 
 async def _disconnect_sdk_adapter(adapter: Any) -> None:

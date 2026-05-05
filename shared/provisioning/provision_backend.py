@@ -12,9 +12,9 @@ import yaml
 
 from shared.core.logger import get_logger, redact_sensitive
 from shared.provisioning.provision_models import ProvisionRequest, ProvisionResult, WifiNetwork
+from shared.provisioning.roles import validate_role
 
 
-_VALID_ROLES = {"logistics", "patrol"}
 DEFAULT_DOG_AP_IP = "192.168.234.1"
 REMOTE_DOG_SCRIPT_PATH = "/usr/local/bin/dog_wifi_provision.sh"
 REMOTE_SDK_CONFIG_PATH = "/opt/export/config/sdk_config.yaml"
@@ -32,10 +32,10 @@ def _require_non_empty_string(value: object, field_name: str) -> str:
 
 
 def _validate_role(role: object) -> str:
-    normalized_role = _require_non_empty_string(role, "role")
-    if normalized_role not in _VALID_ROLES:
-        raise ProvisioningError("role must be either 'logistics' or 'patrol'")
-    return normalized_role
+    try:
+        return validate_role(_require_non_empty_string(role, "role"))
+    except ValueError as exc:
+        raise ProvisioningError(str(exc)) from exc
 
 
 def _normalize_mac(mac_address: object) -> str:

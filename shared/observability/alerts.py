@@ -297,7 +297,11 @@ class AlertRouter:
         except Exception:
             logger.exception(
                 "Alert routing failed",
-                extra={"event_name": event.name.value, "event_id": event.event_id, "source": event.source},
+                extra={
+                    "event_name": event.name.value if hasattr(event.name, "value") else str(event.name),
+                    "event_id": event.event_id,
+                    "source": event.source,
+                },
             )
 
     def _store_alert(self, alert: Alert, *, create_audit: bool, notify_ws: bool) -> Alert:

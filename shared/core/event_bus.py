@@ -46,6 +46,8 @@ class EventName(str, Enum):
     HUMAN_CONFIRMED_LOAD = "human.confirmed_load"
     HUMAN_CONFIRMED_UNLOAD = "human.confirmed_unload"
 
+    # App-specific events retained here for backward compatibility.
+    # Future apps should use plain string event names instead of adding members here.
     TASK_SUBMITTED = "task.submitted"
     TASK_DISPATCHED = "task.dispatched"
     TASK_STATUS_CHANGED = "task.status_changed"
@@ -55,6 +57,9 @@ class EventName(str, Enum):
 
     ESTOP_TRIGGERED = "estop.triggered"
     ESTOP_RELEASED = "estop.released"
+
+    # App-specific events retained here for backward compatibility.
+    # Future apps should use plain string event names instead of adding members here.
     PATROL_CYCLE_STARTED = "patrol.cycle.started"
     PATROL_CYCLE_COMPLETED = "patrol.cycle.completed"
     PATROL_CYCLE_FAILED = "patrol.cycle.failed"
@@ -67,7 +72,7 @@ class EventName(str, Enum):
 
 @dataclass(frozen=True)
 class Event:
-    name: EventName
+    name: EventName | str
     payload: dict[str, Any] = field(default_factory=dict)
     event_id: str = field(default_factory=lambda: str(uuid4()))
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -79,7 +84,7 @@ class Event:
 @dataclass
 class Subscription:
     subscription_id: str
-    event_name: EventName | WildcardEventName
+    event_name: EventName | str | WildcardEventName
     callback: SubscriberCallback
     subscriber_name: str
     created_at: datetime
@@ -165,7 +170,7 @@ class EventBus:
         if self._dispatcher_task and not self._dispatcher_task.done():
             return
 
-        self._dispatcher_task = asyncio.create_task(self._dispatch_loop(), name="sumitomo-event-bus")
+        self._dispatcher_task = asyncio.create_task(self._dispatch_loop(), name="platform-event-bus")
         logger.info("Event bus started", extra={"event_name": EventName.SYSTEM_STARTED.value})
 
     async def stop(self) -> None:
@@ -240,9 +245,12 @@ class EventBus:
         for subscription in subscriptions:
             await self._invoke_callback(subscription, event)
 
-    def _matching_subscriptions(self, event_name: EventName) -> list[Subscription]:
+    def _matching_subscriptions(self, event_name: EventName | str) -> list[Subscription]:
+        event_value = self._event_name_value(event_name)
         exact_matches = [
-            subscription for subscription in self._subscriptions.values() if subscription.event_name == event_name
+            subscription
+            for subscription in self._subscriptions.values()
+            if self._event_name_value(subscription.event_name) == event_value
         ]
         wildcard_matches = [
             subscription for subscription in self._subscriptions.values() if subscription.event_name == "*"
@@ -260,7 +268,7 @@ class EventBus:
             logger.exception(
                 "Event callback failed",
                 extra={
-                    "event_name": event.name.value,
+                    "event_name": self._event_name_value(event.name),
                     "subscription_id": subscription.subscription_id,
                     "subscriber_name": subscription.subscriber_name,
                     "source": event.source,
@@ -273,7 +281,7 @@ class EventBus:
         logger.debug(
             "Event published",
             extra={
-                "event_name": event.name.value,
+                "event_name": self._event_name_value(event.name),
                 "event_id": event.event_id,
                 "source": event.source,
                 "task_id": event.task_id,
@@ -283,7 +291,7 @@ class EventBus:
 
     def _normalize_event_name(
         self, event_name: EventName | str, *, allow_wildcard: bool
-    ) -> EventName | WildcardEventName:
+    ) -> EventName | str | WildcardEventName:
         if isinstance(event_name, EventName):
             return event_name
         if event_name == "*" and allow_wildcard:
@@ -292,8 +300,14 @@ class EventBus:
             raise ValueError("Wildcard event name is allowed only for subscription lookup")
         try:
             return EventName(event_name)
-        except ValueError as exc:
-            raise ValueError(f"Unknown event name: {event_name}") from exc
+        except ValueError:
+            if not isinstance(event_name, str) or not event_name.strip():
+                raise ValueError("event name must be a non-empty string")
+            return event_name.strip()
+
+    @staticmethod
+    def _event_name_value(event_name: EventName | str) -> str:
+        return event_name.value if isinstance(event_name, EventName) else event_name
 
 
 event_bus = EventBus()

@@ -99,7 +99,7 @@ class StateMonitor:
                 logger.warning("State monitor database initialization failed")
 
         self._stop_event = asyncio.Event()
-        self._task = asyncio.create_task(self._run_loop(), name="sumitomo-state-monitor")
+        self._task = asyncio.create_task(self._run_loop(), name="platform-state-monitor")
         logger.info("Quadruped state monitor started")
 
     async def stop(self) -> None:

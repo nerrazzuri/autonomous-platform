@@ -11,6 +11,7 @@ from apps.patrol.tasks.patrol_scheduler import get_patrol_scheduler
 from apps.patrol.tasks.patrol_watchdog import get_patrol_watchdog
 from shared.core.config import get_config
 from shared.core.logger import get_logger, setup_logging
+from shared.provisioning.roles import register_role
 from shared.runtime import base_startup
 
 
@@ -23,6 +24,16 @@ def get_patrol_queue():
     if callable(getter):
         return getter()
     return queue_module.PatrolQueue()
+
+
+def _retarget_patrol_singletons(navigator, state_monitor) -> None:
+    patrol_dispatcher = get_patrol_dispatcher()
+    if hasattr(patrol_dispatcher, "_navigator"):
+        patrol_dispatcher._navigator = navigator
+
+
+base_startup.register_singleton_retarget_hook(_retarget_patrol_singletons)
+register_role("patrol")
 
 
 async def _run_shutdown_steps(steps: list[tuple[str, Callable[[], Awaitable[None]]]]) -> list[tuple[str, str]]:

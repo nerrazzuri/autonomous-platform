@@ -9,6 +9,7 @@ import yaml
 import shared.provisioning.provision_backend as provision_backend
 from shared.provisioning.provision_backend import ProvisioningError, write_robot_entry
 from shared.provisioning.provision_models import ProvisionRequest, ProvisionResult
+from shared.provisioning.roles import register_role, unregister_role
 
 
 def load_yaml(path: Path) -> dict[str, object]:
@@ -216,6 +217,25 @@ def test_invalid_role_raises(tmp_path: Path) -> None:
             "security",
             tmp_path / "robots.yaml",
         )
+
+
+def test_registered_custom_role_writes_robot_entry(tmp_path: Path) -> None:
+    register_role("inspection")
+    try:
+        entry = write_robot_entry(
+            ProvisionResult(
+                success=True,
+                dog_mac="aa:bb:cc:dd:ee:01",
+                dog_ip="192.168.1.50",
+            ),
+            "inspection",
+            tmp_path / "robots.yaml",
+        )
+
+        assert entry["role"] == "inspection"
+        assert entry["robot_id"] == "inspection_01"
+    finally:
+        unregister_role("inspection")
 
 
 def test_unsuccessful_provision_result_raises(tmp_path: Path) -> None:

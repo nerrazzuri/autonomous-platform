@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -13,40 +12,58 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-@pytest.fixture
-def main_module(monkeypatch: pytest.MonkeyPatch):
-    sys.modules.pop("main", None)
-    return importlib.import_module("main")
-
-
-def test_create_uvicorn_config(main_module, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        main_module,
-        "get_config",
-        lambda: SimpleNamespace(api=SimpleNamespace(host="127.0.0.1", port=9090)),
-    )
-
-    config = main_module.create_uvicorn_config()
-
-    assert config == {
-        "app": "apps.logistics.api.rest:app",
-        "host": "127.0.0.1",
-        "port": 9090,
-        "reload": False,
-    }
-
-
-def test_main_importable_without_running_server(monkeypatch: pytest.MonkeyPatch) -> None:
-    class FakeUvicorn:
-        def run(self, **kwargs):
-            raise AssertionError("uvicorn.run should not execute during import")
-
-    sys.modules.pop("main", None)
-    monkeypatch.setitem(sys.modules, "uvicorn", FakeUvicorn())
-
+def test_importing_main_does_not_launch_app() -> None:
     module = importlib.import_module("main")
 
     assert callable(module.main)
+
+
+def test_main_keeps_logistics_startup_compatibility_exports() -> None:
+    module = importlib.import_module("main")
+
     assert callable(module.startup_system)
     assert callable(module.shutdown_system)
-    assert callable(module.create_uvicorn_config)
+    assert module.base_startup is not None
+
+
+def test_app_selector_defaults_to_logistics() -> None:
+    module = importlib.import_module("main")
+    parser = module._build_parser()
+
+    args = parser.parse_args([])
+
+    assert args.app == "logistics"
+
+
+def test_main_launches_selected_app(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = importlib.import_module("main")
+    calls: list[str] = []
+
+    def load_app_main(app_name: str):
+        def app_main() -> None:
+            calls.append(app_name)
+
+        return app_main
+
+    monkeypatch.setattr(module, "_load_app_main", load_app_main)
+
+    module.main(["--app", "patrol"])
+
+    assert calls == ["patrol"]
+
+
+def test_main_default_launches_logistics(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = importlib.import_module("main")
+    calls: list[str] = []
+
+    def load_app_main(app_name: str):
+        def app_main() -> None:
+            calls.append(app_name)
+
+        return app_main
+
+    monkeypatch.setattr(module, "_load_app_main", load_app_main)
+
+    module.main([])
+
+    assert calls == ["logistics"]

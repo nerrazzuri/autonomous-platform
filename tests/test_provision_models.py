@@ -11,6 +11,7 @@ from shared.provisioning.provision_models import (
     RobotStatus,
     WifiNetwork,
 )
+from shared.provisioning.roles import get_registered_roles, register_role, unregister_role
 
 
 def test_wifi_network_construction_and_serialization() -> None:
@@ -106,3 +107,19 @@ def test_invalid_role_raises() -> None:
             target_wifi_password="secret-password",
             role="security",
         )
+
+
+def test_registered_custom_role_is_valid() -> None:
+    register_role("inspection")
+    try:
+        request = ProvisionRequest(
+            dog_ap_ssid="Robot-AP-01",
+            target_wifi_ssid="WarehouseWiFi",
+            target_wifi_password="secret-password",
+            role="inspection",
+        )
+
+        assert request.role == "inspection"
+        assert "inspection" in get_registered_roles()
+    finally:
+        unregister_role("inspection")

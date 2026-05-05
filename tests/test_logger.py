@@ -25,7 +25,7 @@ def load_logger_module():
 def remove_owned_handlers() -> None:
     root_logger = logging.getLogger()
     for handler in list(root_logger.handlers):
-        if getattr(handler, "_sumitomo_logger_handler", False):
+        if getattr(handler, "_platform_logger_handler", False):
             root_logger.removeHandler(handler)
             handler.close()
 
@@ -65,7 +65,7 @@ def parse_last_json_line(capsys: pytest.CaptureFixture[str]) -> dict[str, object
 
 def flush_owned_handlers() -> None:
     for handler in logging.getLogger().handlers:
-        if getattr(handler, "_sumitomo_logger_handler", False):
+        if getattr(handler, "_platform_logger_handler", False):
             handler.flush()
 
 
@@ -85,12 +85,12 @@ def test_setup_logging_idempotent_no_duplicate_handlers(tmp_path: Path) -> None:
 
     module.setup_logging(config)
     first_owned_handlers = [
-        handler for handler in logging.getLogger().handlers if getattr(handler, "_sumitomo_logger_handler", False)
+        handler for handler in logging.getLogger().handlers if getattr(handler, "_platform_logger_handler", False)
     ]
 
     module.setup_logging(config)
     second_owned_handlers = [
-        handler for handler in logging.getLogger().handlers if getattr(handler, "_sumitomo_logger_handler", False)
+        handler for handler in logging.getLogger().handlers if getattr(handler, "_platform_logger_handler", False)
     ]
 
     assert len(first_owned_handlers) == 2

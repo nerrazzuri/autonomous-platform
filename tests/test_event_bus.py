@@ -29,7 +29,7 @@ def make_logger_config(tmp_path: Path) -> AppConfig:
 def reset_owned_handlers() -> None:
     root_logger = logging.getLogger()
     for handler in list(root_logger.handlers):
-        if getattr(handler, "_sumitomo_logger_handler", False):
+        if getattr(handler, "_platform_logger_handler", False):
             root_logger.removeHandler(handler)
             handler.close()
 
@@ -105,15 +105,31 @@ async def test_unsubscribe_stops_receiving_events(bus) -> None:
 
 
 @pytest.mark.asyncio
-async def test_unknown_event_name_rejected(bus) -> None:
+async def test_plain_string_event_publish_subscribe_works(bus) -> None:
+    def callback(event):
+        received.append((event.name, event.payload["scan_id"], event.source))
+
+    received = []
+
+    await bus.start()
+    bus.subscribe("inspection.scan_started", callback)
+    event = await bus.publish("inspection.scan_started", {"scan_id": "scan-1"}, source="inspection")
+    await bus.wait_until_idle(timeout=0.5)
+
+    assert event.name == "inspection.scan_started"
+    assert received == [("inspection.scan_started", "scan-1", "inspection")]
+
+
+@pytest.mark.asyncio
+async def test_empty_string_event_name_rejected(bus) -> None:
     def callback(event):
         return None
 
     with pytest.raises(ValueError):
-        bus.subscribe("not.real", callback)
+        bus.subscribe(" ", callback)
 
     with pytest.raises(ValueError):
-        await bus.publish("not.real", {})
+        await bus.publish(" ", {})
 
 
 @pytest.mark.asyncio
@@ -269,6 +285,55 @@ def test_patrol_event_names_are_available() -> None:
     assert EventName.PATROL_ANOMALY_CLEARED.value == "patrol.anomaly.cleared"
     assert EventName.PATROL_SUSPENDED.value == "patrol.suspended"
     assert EventName.PATROL_RESUMED.value == "patrol.resumed"
+
+
+@pytest.mark.asyncio
+async def test_string_matching_existing_event_name_matches_enum_publish(bus) -> None:
+    from core.event_bus import EventName
+
+    received = []
+
+    def callback(event):
+        received.append(event.name)
+
+    await bus.start()
+    bus.subscribe(EventName.SYSTEM_STARTED.value, callback)
+    await bus.publish(EventName.SYSTEM_STARTED)
+    await bus.wait_until_idle(timeout=0.5)
+
+    assert received == [EventName.SYSTEM_STARTED]
+
+
+@pytest.mark.asyncio
+async def test_enum_subscription_matches_string_publish(bus) -> None:
+    from core.event_bus import EventName
+
+    received = []
+
+    def callback(event):
+        received.append(event.name)
+
+    await bus.start()
+    bus.subscribe(EventName.SYSTEM_STARTED, callback)
+    await bus.publish(EventName.SYSTEM_STARTED.value)
+    await bus.wait_until_idle(timeout=0.5)
+
+    assert received == [EventName.SYSTEM_STARTED]
+
+
+def test_event_name_members_are_retained() -> None:
+    from core.event_bus import EventName
+
+    expected_members = {
+        "SYSTEM_STARTED",
+        "SYSTEM_STOPPING",
+        "TASK_SUBMITTED",
+        "TASK_COMPLETED",
+        "PATROL_CYCLE_STARTED",
+        "PATROL_RESUMED",
+    }
+
+    assert expected_members.issubset(EventName.__members__)
 
 
 @pytest.mark.asyncio
