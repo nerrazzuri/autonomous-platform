@@ -36,7 +36,7 @@ class WifiNetwork:
 
 @dataclass(frozen=True)
 class ProvisionRequest:
-    dog_ap_ssid: str
+    quadruped_ap_ssid: str
     target_wifi_ssid: str
     target_wifi_password: str
     role: str = "logistics"
@@ -48,8 +48,8 @@ class ProvisionRequest:
     def __post_init__(self) -> None:
         object.__setattr__(
             self,
-            "dog_ap_ssid",
-            _require_non_empty_string(self.dog_ap_ssid, "dog_ap_ssid"),
+            "quadruped_ap_ssid",
+            _require_non_empty_string(self.quadruped_ap_ssid, "quadruped_ap_ssid"),
         )
         object.__setattr__(
             self,
@@ -91,8 +91,8 @@ class ProvisionRequest:
 class ProvisionResult:
     success: bool
     robot_id: str | None = None
-    dog_mac: str | None = None
-    dog_ip: str | None = None
+    quadruped_mac: str | None = None
+    quadruped_ip: str | None = None
     pc_ip: str | None = None
     role: str | None = None
     message: str | None = None
@@ -106,17 +106,17 @@ class ProvisionResult:
                 "robot_id",
                 _require_non_empty_string(self.robot_id, "robot_id"),
             )
-        if self.dog_mac is not None:
+        if self.quadruped_mac is not None:
             object.__setattr__(
                 self,
-                "dog_mac",
-                _require_non_empty_string(self.dog_mac, "dog_mac"),
+                "quadruped_mac",
+                _require_non_empty_string(self.quadruped_mac, "quadruped_mac"),
             )
-        if self.dog_ip is not None:
+        if self.quadruped_ip is not None:
             object.__setattr__(
                 self,
-                "dog_ip",
-                _require_non_empty_string(self.dog_ip, "dog_ip"),
+                "quadruped_ip",
+                _require_non_empty_string(self.quadruped_ip, "quadruped_ip"),
             )
         if self.pc_ip is not None:
             object.__setattr__(
@@ -137,7 +137,7 @@ class ProvisionResult:
 @dataclass(frozen=True)
 class RobotConnectionConfig:
     robot_id: str
-    dog_ip: str
+    quadruped_ip: str
     pc_ip: str | None = None
     sdk_port: int | None = None
     ssh_user: str = "firefly"
@@ -148,7 +148,7 @@ class RobotConnectionConfig:
             "robot_id",
             _require_non_empty_string(self.robot_id, "robot_id"),
         )
-        object.__setattr__(self, "dog_ip", _require_non_empty_string(self.dog_ip, "dog_ip"))
+        object.__setattr__(self, "quadruped_ip", _require_non_empty_string(self.quadruped_ip, "quadruped_ip"))
         object.__setattr__(
             self,
             "ssh_user",
@@ -163,7 +163,7 @@ class RobotConnectionConfig:
 @dataclass(frozen=True)
 class RobotStatus:
     robot_id: str
-    dog_ip: str | None = None
+    quadruped_ip: str | None = None
     connected: bool = False
     provisioned: bool = False
     message: str | None = None
@@ -174,8 +174,8 @@ class RobotStatus:
             "robot_id",
             _require_non_empty_string(self.robot_id, "robot_id"),
         )
-        if self.dog_ip is not None:
-            object.__setattr__(self, "dog_ip", _require_non_empty_string(self.dog_ip, "dog_ip"))
+        if self.quadruped_ip is not None:
+            object.__setattr__(self, "quadruped_ip", _require_non_empty_string(self.quadruped_ip, "quadruped_ip"))
         if type(self.connected) is not bool:
             raise ValueError("connected must be a bool")
         if type(self.provisioned) is not bool:

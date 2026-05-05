@@ -4,7 +4,7 @@
 
 This guide brings up the full supervised quadruped logistics POC from a fresh Ubuntu workstation to a first supervised factory route test.
 
-It covers workstation setup, ROS2 setup, backend setup, LiDAR validation, SDK validation, mapping, localization, station and route commissioning, obstacle testing, HMI testing, optional speaker testing, and a first `LINE_A -> QA` logistics task.
+It covers workstation setup, ROS2 setup, backend setup, quadruped Wi-Fi provisioning, LiDAR validation, SDK validation, mapping, localization, station and route commissioning, obstacle testing, HMI testing, optional speaker testing, and a first `LINE_A -> QA` logistics task.
 
 This guide is for a supervised POC only. It does not cover production systemd or Docker deployment, multi-robot fleet operation, Nav2 dynamic rerouting, MES integration, cloud deployment, or commercial safety certification.
 
@@ -75,7 +75,8 @@ Ubuntu 22.04 Jammy is required/recommended for this POC workstation. Ubuntu 24.0
 Before installing or moving hardware, write down:
 
 - Workstation IP address.
-- Quadruped IP address.
+- Quadruped factory Wi-Fi/LAN IP address.
+- Quadruped provisioning AP SSID and AP IP address. The default AP IP used by the provisioning backend is `192.168.234.1`.
 - M10 LiDAR IP address. The default is commonly `192.168.1.200`, but confirm on-site.
 - Factory Wi-Fi/LAN SSID and subnet.
 - ROS domain ID, if the site uses one.
@@ -87,11 +88,12 @@ Basic checks:
 ip addr
 ip route
 ping <quadruped_ip>
+ping 192.168.234.1
 ping 192.168.1.200
 ros2 doctor
 ```
 
-`ros2 doctor` is optional and only works after ROS2 is installed and sourced.
+`ping 192.168.234.1` is only expected to work while the workstation is connected to the quadruped provisioning AP. `ros2 doctor` is optional and only works after ROS2 is installed and sourced.
 
 The workstation and quadruped must be reachable on the expected network. The LiDAR Ethernet link must be on a subnet that can reach the M10. If the LiDAR IP differs from the expected config, update the LiDAR config or launch arguments according to the `wheeltec_ros2` LiDAR documentation.
 
@@ -250,7 +252,101 @@ Dry-run startup with the generated config:
 APP_CONFIG=config.local.yaml DRY_RUN=1 ./scripts/start_logistics_dev.sh
 ```
 
-## 8. Start Backend
+## 8. Provision Quadruped Wi-Fi
+
+Provisioning is the step that joins the quadruped to the factory Wi-Fi/LAN and records the resulting quadruped IP for later SDK/backend use. This does not command robot movement.
+
+The workstation-side provisioning flow uploads the renamed quadruped-side script:
+
+```text
+scripts/quadruped_wifi_provision.sh
+-> /usr/local/bin/quadruped_wifi_provision.sh on the quadruped
+```
+
+The previous informal script name should not be used in new procedures.
+
+Prerequisites:
+
+- Quadruped powered on and broadcasting its provisioning AP.
+- Workstation Wi-Fi can see the quadruped AP, usually an SSID such as `D1-Ultra:aa:bb:cc:dd:ee`.
+- Factory Wi-Fi SSID and password are known.
+- Supervisor token is available for the web provisioning page, if using the UI.
+- SSH user/password for the quadruped AP are known. The default username in the tooling is `firefly`.
+- Python environment has been set up with the project dependencies.
+
+Recommended operator path: use the provisioning UI.
+
+```bash
+cd /home/liang/Projects/autonomous-platform-main
+APP_CONFIG=config.local.yaml ./scripts/start_logistics_dev.sh
+```
+
+Open the provisioning UI with a supervisor token:
+
+```text
+http://127.0.0.1:8080/ui/provision.html?token=<your-supervisor-token>
+```
+
+In the UI:
+
+1. Scan Wi-Fi networks.
+2. Select the quadruped AP.
+3. Enter the factory Wi-Fi SSID and password.
+4. Choose the role, usually `logistics`.
+5. Set the SDK library path, usually `sdk/zsl-1`.
+6. Start provisioning.
+7. Wait for the provisioning job to complete.
+
+CLI path for engineers:
+
+```bash
+cd /home/liang/Projects/autonomous-platform-main
+python3.10 scripts/provision_cli.py \
+  --quadruped-ap-ssid "<quadruped_ap_ssid>" \
+  --target-wifi-ssid "<factory_wifi_ssid>" \
+  --target-wifi-password "<factory_wifi_password>" \
+  --role logistics \
+  --pc-wifi-iface wlan0 \
+  --robots-yaml-path data/robots.yaml \
+  --sdk-lib-path sdk/zsl-1 \
+  --ssh-user firefly
+```
+
+Use a private terminal for the CLI path because shell history can capture command-line passwords. Prefer the UI for normal supervised POC work.
+
+The CLI/backend performs these actions:
+
+- SSH to the quadruped provisioning AP at `192.168.234.1`.
+- Upload `scripts/quadruped_wifi_provision.sh`.
+- Run the remote script with the target factory Wi-Fi credentials.
+- Read `/tmp/quadruped_mac` and `/tmp/quadruped_ip` from the quadruped after it joins the factory Wi-Fi.
+- Patch the SDK config target IP on the quadruped.
+- Write or update `data/robots.yaml` with `robot_id`, MAC, `quadruped_ip`, role, and SDK path.
+
+After provisioning:
+
+```bash
+ping <new_quadruped_ip>
+grep -n "quadruped_ip" data/robots.yaml
+```
+
+Update `config.local.yaml` if the generated `quadruped.quadruped_ip` still has a placeholder value:
+
+```bash
+nano config.local.yaml
+APP_CONFIG=config.local.yaml DRY_RUN=1 ./scripts/start_logistics_dev.sh
+```
+
+If provisioning fails:
+
+- Confirm the workstation is connected to or can reach the quadruped AP.
+- Confirm `ping 192.168.234.1` works while on the AP network.
+- Confirm the SSH username/password.
+- Confirm the factory Wi-Fi password.
+- Confirm `wlan0` is the correct workstation Wi-Fi interface, or pass the correct interface with `--pc-wifi-iface`.
+- Do not proceed to SDK movement validation until the quadruped is reachable on the factory network.
+
+## 9. Start Backend
 
 From the backend repo:
 
@@ -288,7 +384,7 @@ export OPERATOR_TOKEN=<your-operator-token>
 
 Never paste real tokens into committed files, shared tickets, screenshots, or logs.
 
-## 9. SDK / Quadruped Connection Validation
+## 10. SDK / Quadruped Connection Validation
 
 SDK files can exist locally while hardware runtime is still unproven. Runtime validation must happen with the quadruped powered on and reachable.
 
@@ -319,7 +415,7 @@ Safe validation sequence:
 
 Do not run motion before connection, passive/safe-stop, and emergency procedures are validated.
 
-## 10. LiDAR `/scan` Validation
+## 11. LiDAR `/scan` Validation
 
 From the backend repo:
 
@@ -372,7 +468,7 @@ ros2 topic list | grep scan
 SCAN_TOPIC=/x10/scan ./scripts/ros/check_scan.sh
 ```
 
-## 11. Mapping
+## 12. Mapping
 
 Start mapping:
 
@@ -418,7 +514,7 @@ Expected files:
 
 Commit the map only after verifying it is good.
 
-## 12. Localization
+## 13. Localization
 
 Start localization:
 
@@ -449,7 +545,7 @@ If no pose:
 - Verify `ros2.enabled=true` in the active backend config.
 - Verify the backend bridge is running.
 
-## 13. Commissioning Stations and Routes
+## 14. Commissioning Stations and Routes
 
 Set API environment:
 
@@ -514,7 +610,7 @@ File roles:
 
 After route capture, ensure any logistics route placeholder status required by backend validation is updated. Before real task demo, set `logistics.allow_placeholder_routes=false` in the local config.
 
-## 14. Speaker Test
+## 15. Speaker Test
 
 Speaker output is optional but useful for arrival alerts.
 
@@ -539,7 +635,7 @@ Troubleshooting:
 - Missing `arrival.wav`.
 - `speaker.enabled=false`.
 
-## 15. TJC Screen Test
+## 16. TJC Screen Test
 
 ### Option A: POC Without Physical TJC
 
@@ -563,7 +659,7 @@ If the serial daemon is not implemented or not running yet, the physical TJC can
 
 The TJC screen must never directly command robot motion. All actions go through the backend HMI API or WebSocket.
 
-## 16. Obstacle Detection and Auto-Resume Test
+## 17. Obstacle Detection and Auto-Resume Test
 
 Expected behavior:
 
@@ -597,7 +693,7 @@ Current config fields:
 - `obstacle_stop_distance_m`
 - `obstacle_forward_arc_deg`
 
-## 17. E-Stop Test
+## 18. E-Stop Test
 
 This must be tested before a route demo.
 
@@ -613,7 +709,7 @@ Use the existing `/estop` endpoint or site-approved E-stop mechanism. Confirm th
 
 Do not perform route testing until E-stop behavior has been validated.
 
-## 18. First Route Test: `LINE_A -> QA`
+## 19. First Route Test: `LINE_A -> QA`
 
 Prerequisites:
 
@@ -664,7 +760,7 @@ Expected sequence:
 
 If a route holds for load/unload, do not bypass those confirmations.
 
-## 19. Troubleshooting
+## 20. Troubleshooting
 
 ### Backend Will Not Start
 
@@ -696,6 +792,16 @@ If a route holds for load/unload, do not bypass those confirmations.
 - ROS2 bridge disabled.
 - Wrong base frame.
 - Robot telemetry missing.
+
+### Quadruped Wi-Fi Provisioning Fails
+
+- Workstation is not connected to the quadruped provisioning AP.
+- `ping 192.168.234.1` fails while on the provisioning AP network.
+- Wrong `--quadruped-ap-ssid`.
+- Wrong factory Wi-Fi SSID or password.
+- Wrong workstation Wi-Fi interface in `--pc-wifi-iface`.
+- SSH user/password is incorrect.
+- `scripts/quadruped_wifi_provision.sh` was not uploaded or executable on the quadruped.
 
 ### Commissioning API Says Pose Unavailable
 
@@ -734,7 +840,7 @@ If a route holds for load/unload, do not bypass those confirmations.
 - TJC daemon not implemented or not running.
 - Token/WebSocket issue.
 
-## 20. Recovery and Backup
+## 21. Recovery and Backup
 
 Back up before commissioning:
 
@@ -750,7 +856,7 @@ FORCE=1 ./scripts/commissioning/restore_routes.sh latest
 
 Do not overwrite good routes without a backup. Keep copies of map files before replacing them.
 
-## 21. POC Acceptance Checklist
+## 22. POC Acceptance Checklist
 
 Workstation:
 
@@ -762,6 +868,8 @@ Workstation:
 
 Quadruped:
 
+- [ ] Quadruped Wi-Fi provisioning completed.
+- [ ] `data/robots.yaml` records the quadruped MAC and `quadruped_ip`.
 - [ ] Reachable over network.
 - [ ] SDK connects.
 - [ ] E-stop/passive behavior tested.
@@ -800,7 +908,7 @@ HMI/speaker:
 - [ ] TJC physical screen works, if required.
 - [ ] Speaker works, if required.
 
-## 22. What Is Not Required for This POC
+## 23. What Is Not Required for This POC
 
 - Polished UI.
 - Full production systemd.

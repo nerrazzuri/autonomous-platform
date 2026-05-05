@@ -28,7 +28,7 @@ def test_provision_html_exists_and_references_required_endpoints() -> None:
 def test_provision_ui_contains_required_form_fields_and_polling_logic() -> None:
     content = (ROOT / "apps" / "logistics" / "ui" / "provision.html").read_text(encoding="utf-8")
 
-    assert 'id="dog_ap_ssid"' in content
+    assert 'id="quadruped_ap_ssid"' in content
     assert 'id="target_wifi_ssid"' in content
     assert 'id="target_wifi_password"' in content
     assert 'id="role"' in content

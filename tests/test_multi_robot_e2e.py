@@ -392,8 +392,8 @@ def _write_provisioned_robot(
     robots_yaml_path: Path,
     *,
     robot_id: str,
-    dog_mac: str,
-    dog_ip: str,
+    quadruped_mac: str,
+    quadruped_ip: str,
     role: str,
     display_name: str,
 ) -> None:
@@ -404,8 +404,8 @@ def _write_provisioned_robot(
         ProvisionResult(
             success=True,
             robot_id=robot_id,
-            dog_mac=dog_mac,
-            dog_ip=dog_ip,
+            quadruped_mac=quadruped_mac,
+            quadruped_ip=quadruped_ip,
             pc_ip="192.168.1.10",
             role=role,
             message="Provisioning complete",
@@ -446,24 +446,24 @@ async def test_multi_robot_stack_end_to_end(monkeypatch: pytest.MonkeyPatch, tmp
     _write_provisioned_robot(
         robots_yaml_path,
         robot_id="logistics_01",
-        dog_mac="aa:bb:cc:dd:ee:01",
-        dog_ip="192.168.1.51",
+        quadruped_mac="aa:bb:cc:dd:ee:01",
+        quadruped_ip="192.168.1.51",
         role="logistics",
         display_name="Logistics Robot 1",
     )
     _write_provisioned_robot(
         robots_yaml_path,
         robot_id="logistics_02",
-        dog_mac="aa:bb:cc:dd:ee:02",
-        dog_ip="192.168.1.52",
+        quadruped_mac="aa:bb:cc:dd:ee:02",
+        quadruped_ip="192.168.1.52",
         role="logistics",
         display_name="Logistics Robot 2",
     )
     _write_provisioned_robot(
         robots_yaml_path,
         robot_id="patrol_01",
-        dog_mac="aa:bb:cc:dd:ee:03",
-        dog_ip="192.168.1.53",
+        quadruped_mac="aa:bb:cc:dd:ee:03",
+        quadruped_ip="192.168.1.53",
         role="patrol",
         display_name="Patrol Robot 1",
     )
@@ -626,12 +626,12 @@ def test_provisioning_api_flow_end_to_end(monkeypatch: pytest.MonkeyPatch, tmp_p
     )
     monkeypatch.setattr(
         rest_module.provision_backend,
-        "provision_dog",
+        "provision_quadruped",
         lambda request: ProvisionResult(
             success=True,
             robot_id=request.robot_id or "logistics_01",
-            dog_mac="aa:bb:cc:dd:ee:11",
-            dog_ip="192.168.1.111",
+            quadruped_mac="aa:bb:cc:dd:ee:11",
+            quadruped_ip="192.168.1.111",
             pc_ip="192.168.1.10",
             role=request.role,
             message="Provisioning complete",
@@ -648,7 +648,7 @@ def test_provisioning_api_flow_end_to_end(monkeypatch: pytest.MonkeyPatch, tmp_p
             "/provision/start",
             headers=build_auth_header(TEST_SUPERVISOR_TOKEN),
             json={
-                "dog_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
+                "quadruped_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
                 "target_wifi_ssid": "FACTORY_WIFI",
                 "target_wifi_password": "super-secret-password",
                 "role": "logistics",
@@ -664,8 +664,8 @@ def test_provisioning_api_flow_end_to_end(monkeypatch: pytest.MonkeyPatch, tmp_p
         status_body = _poll_job_status(client, start_response.json()["job_id"], TEST_SUPERVISOR_TOKEN)
         assert status_body["status"] == "succeeded"
         assert status_body["robot_id"] == "logistics_01"
-        assert status_body["dog_mac"] == "aa:bb:cc:dd:ee:11"
-        assert status_body["dog_ip"] == "192.168.1.111"
+        assert status_body["quadruped_mac"] == "aa:bb:cc:dd:ee:11"
+        assert status_body["quadruped_ip"] == "192.168.1.111"
         assert "super-secret-password" not in str(status_body)
 
         robots_response = client.get("/provision/robots", headers=build_auth_header(TEST_SUPERVISOR_TOKEN))

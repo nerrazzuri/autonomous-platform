@@ -201,36 +201,58 @@ def test_provisioning_logs_do_not_include_wifi_password(
     from shared.provisioning import provision_backend
     from shared.provisioning.provision_models import ProvisionRequest
 
+    captured_records: list[logging.LogRecord] = []
+
     class FakeClient:
         def close(self) -> None:
             return None
 
+    class CaptureHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            captured_records.append(record)
+
     monkeypatch.setattr(provision_backend, "ssh_connect", lambda *args, **kwargs: FakeClient())
-    monkeypatch.setattr(provision_backend, "ensure_remote_dog_script", lambda client: None)
+    monkeypatch.setattr(provision_backend, "ensure_remote_quadruped_script", lambda client: None)
     monkeypatch.setattr(
         provision_backend,
         "_safe_remote_read",
-        lambda client, path: "aa:bb:cc:dd:ee:01" if path.endswith("dog_mac") else None,
+        lambda client, path: "aa:bb:cc:dd:ee:01" if path.endswith("quadruped_mac") else None,
     )
     monkeypatch.setattr(provision_backend, "find_ip_by_mac", lambda *args, **kwargs: "192.168.1.50")
     monkeypatch.setattr(provision_backend, "get_pc_ip_for_target", lambda target_ip: "192.168.1.10")
     monkeypatch.setattr(provision_backend, "patch_sdk_config", lambda *args, **kwargs: None)
 
     caplog.set_level(logging.INFO)
-    result = provision_backend.provision_dog(
-        ProvisionRequest(
-            dog_ap_ssid="D1-Ultra:aa:bb:cc:dd:ee",
-            target_wifi_ssid="FACTORY_WIFI",
-            target_wifi_password="super-secret-password",
-            role="logistics",
-            robot_id="logistics_01",
-            pc_wifi_iface="wlan0",
+    capture_handler = CaptureHandler(level=logging.INFO)
+    previous_level = provision_backend.logger.level
+    previous_disabled = provision_backend.logger.disabled
+    previous_global_disable = logging.root.manager.disable
+    provision_backend.logger.setLevel(logging.INFO)
+    provision_backend.logger.disabled = False
+    logging.disable(logging.NOTSET)
+    provision_backend.logger.addHandler(capture_handler)
+    try:
+        result = provision_backend.provision_quadruped(
+            ProvisionRequest(
+                quadruped_ap_ssid="D1-Ultra:aa:bb:cc:dd:ee",
+                target_wifi_ssid="FACTORY_WIFI",
+                target_wifi_password="super-secret-password",
+                role="logistics",
+                robot_id="logistics_01",
+                pc_wifi_iface="wlan0",
+            )
         )
-    )
+    finally:
+        provision_backend.logger.removeHandler(capture_handler)
+        provision_backend.logger.setLevel(previous_level)
+        provision_backend.logger.disabled = previous_disabled
+        logging.disable(previous_global_disable)
 
     assert result.success is True
     assert "super-secret-password" not in caplog.text
-    assert any("provision" in record.getMessage().lower() for record in caplog.records)
+    serialized_records = "\n".join(f"{record.getMessage()} {record.__dict__}" for record in captured_records)
+    assert "super-secret-password" not in serialized_records
+    assert any("provision" in record.getMessage().lower() for record in captured_records)
 
 
 def test_dispatcher_unknown_robot_log_includes_robot_id(

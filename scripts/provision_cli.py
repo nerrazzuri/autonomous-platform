@@ -18,7 +18,7 @@ from shared.provisioning.provision_models import ProvisionRequest
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Provision a quadruped onto factory WiFi and persist it.")
-    parser.add_argument("--dog-ap-ssid", required=True)
+    parser.add_argument("--quadruped-ap-ssid", required=True)
     parser.add_argument("--target-wifi-ssid", required=True)
     parser.add_argument("--target-wifi-password", required=True)
     parser.add_argument("--role", required=True, choices=["logistics", "patrol"])
@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def build_request(args: argparse.Namespace) -> ProvisionRequest:
     return ProvisionRequest(
-        dog_ap_ssid=args.dog_ap_ssid,
+        quadruped_ap_ssid=args.quadruped_ap_ssid,
         target_wifi_ssid=args.target_wifi_ssid,
         target_wifi_password=args.target_wifi_password,
         role=args.role,
@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        result = provision_backend.provision_dog(request)
+        result = provision_backend.provision_quadruped(request)
     except NotImplementedError:
         print("Real provisioning backend is not implemented yet.", file=sys.stderr)
         return 1

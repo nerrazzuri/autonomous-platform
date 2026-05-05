@@ -15,8 +15,8 @@ from shared.provisioning.provision_models import ProvisionRequest, ProvisionResu
 from shared.provisioning.roles import validate_role
 
 
-DEFAULT_DOG_AP_IP = "192.168.234.1"
-REMOTE_DOG_SCRIPT_PATH = "/usr/local/bin/dog_wifi_provision.sh"
+DEFAULT_QUADRUPED_AP_IP = "192.168.234.1"
+REMOTE_QUADRUPED_SCRIPT_PATH = "/usr/local/bin/quadruped_wifi_provision.sh"
 REMOTE_SDK_CONFIG_PATH = "/opt/export/config/sdk_config.yaml"
 logger = get_logger(__name__)
 
@@ -39,7 +39,7 @@ def _validate_role(role: object) -> str:
 
 
 def _normalize_mac(mac_address: object) -> str:
-    return _require_non_empty_string(mac_address, "dog_mac").lower()
+    return _require_non_empty_string(mac_address, "quadruped_mac").lower()
 
 
 def _looks_like_robot_ap(ssid: str) -> bool:
@@ -140,12 +140,12 @@ def run_remote_command(client: Any, command: str, *, timeout: float = 60.0, chec
     return stdout_text
 
 
-def ensure_remote_dog_script(client: Any) -> None:
-    local_script_path = Path(__file__).resolve().parents[2] / "scripts" / "dog_wifi_provision.sh"
+def ensure_remote_quadruped_script(client: Any) -> None:
+    local_script_path = Path(__file__).resolve().parents[2] / "scripts" / "quadruped_wifi_provision.sh"
     if not local_script_path.exists():
         raise ProvisioningError(f"Local provisioning script not found: {local_script_path}")
-    sftp_put(client, local_script_path, REMOTE_DOG_SCRIPT_PATH)
-    run_remote_command(client, f"sudo chmod +x {REMOTE_DOG_SCRIPT_PATH}")
+    sftp_put(client, local_script_path, REMOTE_QUADRUPED_SCRIPT_PATH)
+    run_remote_command(client, f"sudo chmod +x {REMOTE_QUADRUPED_SCRIPT_PATH}")
 
 
 def get_pc_ip_for_target(target_ip: str) -> str:
@@ -243,8 +243,8 @@ def write_robot_entry(
         raise ProvisioningError("Provision result must indicate success before writing")
 
     normalized_role = _validate_role(role)
-    normalized_mac = _normalize_mac(result.dog_mac)
-    normalized_ip = _require_non_empty_string(result.dog_ip, "dog_ip")
+    normalized_mac = _normalize_mac(result.quadruped_mac)
+    normalized_ip = _require_non_empty_string(result.quadruped_ip, "quadruped_ip")
     normalized_sdk_lib_path = _require_non_empty_string(sdk_lib_path, "sdk_lib_path")
     normalized_display_name = (
         _require_non_empty_string(display_name, "display_name") if display_name is not None else None
@@ -493,7 +493,7 @@ def _safe_remote_read(client: Any, path: str) -> str | None:
     return value.strip() or None
 
 
-def provision_dog(request: ProvisionRequest) -> ProvisionResult:
+def provision_quadruped(request: ProvisionRequest) -> ProvisionResult:
     try:
         request = request if isinstance(request, ProvisionRequest) else ProvisionRequest(**request)
         logger.info(
@@ -504,7 +504,7 @@ def provision_dog(request: ProvisionRequest) -> ProvisionResult:
                     "event_type": "provisioning_started",
                     "robot_id": request.robot_id,
                     "role": request.role,
-                    "dog_ap_ssid": request.dog_ap_ssid,
+                    "quadruped_ap_ssid": request.quadruped_ap_ssid,
                     "target_wifi_ssid": request.target_wifi_ssid,
                     "pc_wifi_iface": request.pc_wifi_iface,
                     "ssh_user": request.ssh_user,
@@ -515,13 +515,13 @@ def provision_dog(request: ProvisionRequest) -> ProvisionResult:
             "Robot AP SSH attempt",
             extra={"component": "provisioning", "robot_id": request.robot_id, "status": "ssh_connect_attempt"},
         )
-        client = ssh_connect(DEFAULT_DOG_AP_IP, request.ssh_user, request.ssh_password, timeout=10.0)
+        client = ssh_connect(DEFAULT_QUADRUPED_AP_IP, request.ssh_user, request.ssh_password, timeout=10.0)
         try:
             logger.info("Provisioning script upload started", extra={"component": "provisioning", "robot_id": request.robot_id})
-            ensure_remote_dog_script(client)
+            ensure_remote_quadruped_script(client)
             logger.info("Provisioning script upload succeeded", extra={"component": "provisioning", "robot_id": request.robot_id})
             provision_command = (
-                f"sudo {REMOTE_DOG_SCRIPT_PATH} "
+                f"sudo {REMOTE_QUADRUPED_SCRIPT_PATH} "
                 f"{_shell_quote(request.target_wifi_ssid)} "
                 f"{_shell_quote(request.target_wifi_password)}"
             )
@@ -537,13 +537,13 @@ def provision_dog(request: ProvisionRequest) -> ProvisionResult:
                 "Remote provisioning command completed",
                 extra={"component": "provisioning", "robot_id": request.robot_id, "status": "remote_command_completed"},
             )
-            dog_mac = _safe_remote_read(client, "/tmp/dog_mac")
-            dog_ip = _safe_remote_read(client, "/tmp/dog_ip")
+            quadruped_mac = _safe_remote_read(client, "/tmp/quadruped_mac")
+            quadruped_ip = _safe_remote_read(client, "/tmp/quadruped_ip")
         finally:
             client.close()
 
-        normalized_mac = _normalize_mac(dog_mac or _extract_mac_from_text(request.dog_ap_ssid))
-        resolved_ip = (dog_ip or "").strip() or find_ip_by_mac(
+        normalized_mac = _normalize_mac(quadruped_mac or _extract_mac_from_text(request.quadruped_ap_ssid))
+        resolved_ip = (quadruped_ip or "").strip() or find_ip_by_mac(
             normalized_mac,
             interface=request.pc_wifi_iface,
             timeout=30.0,
@@ -557,8 +557,8 @@ def provision_dog(request: ProvisionRequest) -> ProvisionResult:
                 "component": "provisioning",
                 "robot_id": request.robot_id,
                 "role": request.role,
-                "dog_mac": normalized_mac,
-                "dog_ip": resolved_ip,
+                "quadruped_mac": normalized_mac,
+                "quadruped_ip": resolved_ip,
                 "pc_ip": pc_ip,
                 "status": "succeeded",
             },
@@ -566,8 +566,8 @@ def provision_dog(request: ProvisionRequest) -> ProvisionResult:
         return ProvisionResult(
             success=True,
             robot_id=request.robot_id,
-            dog_mac=normalized_mac,
-            dog_ip=resolved_ip,
+            quadruped_mac=normalized_mac,
+            quadruped_ip=resolved_ip,
             pc_ip=pc_ip,
             role=request.role,
             message="Provisioning complete",

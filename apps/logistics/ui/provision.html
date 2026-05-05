@@ -564,8 +564,8 @@
           <form id="provision-form">
             <div class="form-grid">
               <div class="form-field">
-                <label for="dog_ap_ssid">Robot AP SSID</label>
-                <input id="dog_ap_ssid" name="dog_ap_ssid" type="text" required placeholder="D1-Ultra:aa:bb:cc:dd:ee">
+                <label for="quadruped_ap_ssid">Robot AP SSID</label>
+                <input id="quadruped_ap_ssid" name="quadruped_ap_ssid" type="text" required placeholder="D1-Ultra:aa:bb:cc:dd:ee">
               </div>
               <div class="form-field">
                 <label for="target_wifi_ssid">Factory WiFi SSID</label>
@@ -673,7 +673,7 @@
         jobStatusGrid: document.getElementById("job-status-grid"),
         robotsMessage: document.getElementById("robots-message"),
         provisionedRobots: document.getElementById("provisioned-robots"),
-        dogApSsid: document.getElementById("dog_ap_ssid"),
+        quadrupedApSsid: document.getElementById("quadruped_ap_ssid"),
         targetWifiSsid: document.getElementById("target_wifi_ssid"),
         targetWifiPassword: document.getElementById("target_wifi_password"),
         role: document.getElementById("role"),
@@ -875,7 +875,7 @@
             const ssid = button.getAttribute("data-network-ssid") || "";
             const isRobotAp = button.getAttribute("data-is-robot-ap") === "true";
             if (isRobotAp) {
-              elements.dogApSsid.value = ssid;
+              elements.quadrupedApSsid.value = ssid;
               setScanMessage("Robot AP SSID copied into the form.", "success");
             } else {
               elements.targetWifiSsid.value = ssid;
@@ -895,7 +895,7 @@
           setJobMessage("Submitting provisioning request...", "warning");
 
           const payload = {
-            dog_ap_ssid: elements.dogApSsid.value.trim(),
+            quadruped_ap_ssid: elements.quadrupedApSsid.value.trim(),
             target_wifi_ssid: elements.targetWifiSsid.value.trim(),
             target_wifi_password: elements.targetWifiPassword.value,
             role: elements.role.value,
@@ -942,8 +942,8 @@
           statusItem("Job ID", formatValue(job.job_id, "-")),
           statusItem("Status", status),
           statusItem("Robot ID", formatValue(job.robot_id, "-")),
-          statusItem("Robot MAC", formatValue(job.dog_mac, "-")),
-          statusItem("Robot IP", formatValue(job.dog_ip, "-"))
+          statusItem("Robot MAC", formatValue(job.quadruped_mac, "-")),
+          statusItem("Robot IP", formatValue(job.quadruped_ip, "-"))
         ].join("");
       }
 

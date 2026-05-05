@@ -48,7 +48,7 @@ class FakeProvisioningBackend:
             raise self.scan_error
         return self.scan_result
 
-    def provision_dog(self, request):
+    def provision_quadruped(self, request):
         self.last_request = request
         if self.provision_error is not None:
             raise self.provision_error
@@ -78,8 +78,8 @@ class FakeProvisioningBackend:
         return {
             "robot_id": result.robot_id,
             "display_name": display_name,
-            "mac": result.dog_mac,
-            "quadruped_ip": result.dog_ip,
+            "mac": result.quadruped_mac,
+            "quadruped_ip": result.quadruped_ip,
             "role": role,
             "enabled": True,
         }
@@ -111,8 +111,8 @@ def provision_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     fake_backend.provision_result = ProvisionResult(
         success=True,
         robot_id="logistics_01",
-        dog_mac="aa:bb:cc:dd:ee:01",
-        dog_ip="192.168.1.50",
+        quadruped_mac="aa:bb:cc:dd:ee:01",
+        quadruped_ip="192.168.1.50",
         pc_ip="192.168.1.10",
         role="logistics",
     )
@@ -196,7 +196,7 @@ def test_post_provision_start_returns_job_id_and_hides_password(provision_client
         "/provision/start",
         headers=build_auth_header(TEST_SUPERVISOR_TOKEN),
         json={
-            "dog_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
+            "quadruped_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
             "target_wifi_ssid": "FACTORY_WIFI",
             "target_wifi_password": "secret",
             "role": "logistics",
@@ -228,8 +228,8 @@ def test_successful_provisioning_job_persists_status_and_robot(provision_client,
         return {
             "robot_id": result.robot_id,
             "display_name": display_name,
-            "mac": result.dog_mac,
-            "quadruped_ip": result.dog_ip,
+            "mac": result.quadruped_mac,
+            "quadruped_ip": result.quadruped_ip,
             "role": role,
             "enabled": True,
         }
@@ -240,7 +240,7 @@ def test_successful_provisioning_job_persists_status_and_robot(provision_client,
         "/provision/start",
         headers=build_auth_header(TEST_SUPERVISOR_TOKEN),
         json={
-            "dog_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
+            "quadruped_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
             "target_wifi_ssid": "FACTORY_WIFI",
             "target_wifi_password": "secret",
             "role": "logistics",
@@ -259,8 +259,8 @@ def test_successful_provisioning_job_persists_status_and_robot(provision_client,
         "status": "succeeded",
         "message": "Provisioning complete",
         "robot_id": "logistics_01",
-        "dog_mac": "aa:bb:cc:dd:ee:01",
-        "dog_ip": "192.168.1.50",
+        "quadruped_mac": "aa:bb:cc:dd:ee:01",
+        "quadruped_ip": "192.168.1.50",
     }
     assert writes == [
         {
@@ -284,8 +284,8 @@ def test_failed_provisioning_job_reports_safe_failure_and_does_not_write_yaml(
         success=False,
         message="Provision failed for secret",
         robot_id=None,
-        dog_mac=None,
-        dog_ip=None,
+        quadruped_mac=None,
+        quadruped_ip=None,
     )
     wrote = {"value": False}
 
@@ -299,7 +299,7 @@ def test_failed_provisioning_job_reports_safe_failure_and_does_not_write_yaml(
         "/provision/start",
         headers=build_auth_header(TEST_SUPERVISOR_TOKEN),
         json={
-            "dog_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
+            "quadruped_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
             "target_wifi_ssid": "FACTORY_WIFI",
             "target_wifi_password": "secret",
             "role": "logistics",
@@ -377,15 +377,15 @@ def test_password_never_appears_in_provision_api_responses(provision_client) -> 
         success=False,
         message="secret should never be exposed",
         robot_id=None,
-        dog_mac=None,
-        dog_ip=None,
+        quadruped_mac=None,
+        quadruped_ip=None,
     )
 
     start_response = client.post(
         "/provision/start",
         headers=build_auth_header(TEST_SUPERVISOR_TOKEN),
         json={
-            "dog_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
+            "quadruped_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
             "target_wifi_ssid": "FACTORY_WIFI",
             "target_wifi_password": "secret",
             "role": "logistics",

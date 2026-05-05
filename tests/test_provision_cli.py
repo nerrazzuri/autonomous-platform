@@ -31,22 +31,24 @@ def load_yaml(path: Path) -> dict[str, object]:
 
 
 def test_dry_run_succeeds_without_calling_backend(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = load_cli_module()
     called = False
 
-    def fake_provision_dog(_request):
+    def fake_provision_quadruped(_request):
         nonlocal called
         called = True
-        raise AssertionError("provision_dog should not be called during dry-run")
+        raise AssertionError("provision_quadruped should not be called during dry-run")
 
-    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
+    monkeypatch.setattr(module.provision_backend, "provision_quadruped", fake_provision_quadruped)
     robots_yaml_path = tmp_path / "robots.yaml"
 
     exit_code = module.main(
         [
-            "--dog-ap-ssid",
+            "--quadruped-ap-ssid",
             "D1-Ultra:aa:bb:cc:dd:ee",
             "--target-wifi-ssid",
             "FACTORY_WIFI",
@@ -76,26 +78,28 @@ def test_dry_run_succeeds_without_calling_backend(
 
 
 def test_successful_mocked_provisioning_writes_yaml(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = load_cli_module()
     robots_yaml_path = tmp_path / "robots.yaml"
 
-    def fake_provision_dog(_request):
+    def fake_provision_quadruped(_request):
         return ProvisionResult(
             success=True,
             robot_id="logistics_01",
-            dog_mac="aa:bb:cc:dd:ee:01",
-            dog_ip="192.168.1.50",
+            quadruped_mac="aa:bb:cc:dd:ee:01",
+            quadruped_ip="192.168.1.50",
             pc_ip="192.168.1.10",
             role="logistics",
         )
 
-    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
+    monkeypatch.setattr(module.provision_backend, "provision_quadruped", fake_provision_quadruped)
 
     exit_code = module.main(
         [
-            "--dog-ap-ssid",
+            "--quadruped-ap-ssid",
             "D1-Ultra:aa:bb:cc:dd:ee",
             "--target-wifi-ssid",
             "FACTORY_WIFI",
@@ -128,22 +132,24 @@ def test_successful_mocked_provisioning_writes_yaml(
 
 
 def test_failed_provisioning_result_exits_non_zero_and_does_not_write_yaml(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = load_cli_module()
     robots_yaml_path = tmp_path / "robots.yaml"
 
-    def fake_provision_dog(_request):
+    def fake_provision_quadruped(_request):
         return ProvisionResult(
             success=False,
             message="Robot refused provisioning",
         )
 
-    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
+    monkeypatch.setattr(module.provision_backend, "provision_quadruped", fake_provision_quadruped)
 
     exit_code = module.main(
         [
-            "--dog-ap-ssid",
+            "--quadruped-ap-ssid",
             "D1-Ultra:aa:bb:cc:dd:ee",
             "--target-wifi-ssid",
             "FACTORY_WIFI",
@@ -168,18 +174,20 @@ def test_failed_provisioning_result_exits_non_zero_and_does_not_write_yaml(
 
 
 def test_not_implemented_backend_exits_non_zero_with_clear_message(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = load_cli_module()
 
-    def fake_provision_dog(_request):
+    def fake_provision_quadruped(_request):
         raise NotImplementedError("not yet wired")
 
-    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
+    monkeypatch.setattr(module.provision_backend, "provision_quadruped", fake_provision_quadruped)
 
     exit_code = module.main(
         [
-            "--dog-ap-ssid",
+            "--quadruped-ap-ssid",
             "D1-Ultra:aa:bb:cc:dd:ee",
             "--target-wifi-ssid",
             "FACTORY_WIFI",
@@ -208,7 +216,7 @@ def test_invalid_role_exits_non_zero(capsys: pytest.CaptureFixture[str]) -> None
     with pytest.raises(SystemExit) as exc_info:
         module.main(
             [
-                "--dog-ap-ssid",
+                "--quadruped-ap-ssid",
                 "D1-Ultra:aa:bb:cc:dd:ee",
                 "--target-wifi-ssid",
                 "FACTORY_WIFI",
@@ -230,25 +238,27 @@ def test_invalid_role_exits_non_zero(capsys: pytest.CaptureFixture[str]) -> None
 
 
 def test_explicit_robot_id_and_display_name_are_passed_through_to_yaml(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = load_cli_module()
     robots_yaml_path = tmp_path / "robots.yaml"
 
-    def fake_provision_dog(_request):
+    def fake_provision_quadruped(_request):
         return ProvisionResult(
             success=True,
             robot_id="custom_01",
-            dog_mac="aa:bb:cc:dd:ee:09",
-            dog_ip="192.168.1.90",
+            quadruped_mac="aa:bb:cc:dd:ee:09",
+            quadruped_ip="192.168.1.90",
             role="patrol",
         )
 
-    monkeypatch.setattr(module.provision_backend, "provision_dog", fake_provision_dog)
+    monkeypatch.setattr(module.provision_backend, "provision_quadruped", fake_provision_quadruped)
 
     exit_code = module.main(
         [
-            "--dog-ap-ssid",
+            "--quadruped-ap-ssid",
             "D1-Ultra:aa:bb:cc:dd:ee",
             "--target-wifi-ssid",
             "FACTORY_WIFI",
