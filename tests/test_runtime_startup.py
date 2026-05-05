@@ -246,9 +246,12 @@ def runtime_startup_global_isolation():
     }
 
     base_startup_snapshot = None
+    base_startup_hooks_snapshot = None
     base_startup_module = sys.modules.get("shared.runtime.base_startup")
     if base_startup_module is not None and hasattr(base_startup_module, "_DEFAULT_SINGLETONS"):
         base_startup_snapshot = dict(base_startup_module._DEFAULT_SINGLETONS)
+    if base_startup_module is not None and hasattr(base_startup_module, "_singleton_retarget_hooks"):
+        base_startup_hooks_snapshot = list(base_startup_module._singleton_retarget_hooks)
 
     consumer_snapshots: dict[str, dict[str, object]] = {}
     for module_name, singleton_name, attrs in (
@@ -280,6 +283,11 @@ def runtime_startup_global_isolation():
             if current_base_startup_module is not None and hasattr(current_base_startup_module, "_DEFAULT_SINGLETONS"):
                 current_base_startup_module._DEFAULT_SINGLETONS.clear()
                 current_base_startup_module._DEFAULT_SINGLETONS.update(base_startup_snapshot)
+        current_base_startup_module = sys.modules.get("shared.runtime.base_startup")
+        if current_base_startup_module is not None and hasattr(current_base_startup_module, "_singleton_retarget_hooks"):
+            current_base_startup_module._singleton_retarget_hooks.clear()
+            if base_startup_hooks_snapshot is not None:
+                current_base_startup_module._singleton_retarget_hooks.extend(base_startup_hooks_snapshot)
 
         for module_name, attrs in consumer_snapshots.items():
             module = sys.modules.get(module_name)
@@ -329,6 +337,59 @@ def test_base_startup_has_no_apps_imports(base_startup_module) -> None:
             imported_modules.append(node.module)
 
     assert not any(module == "apps" or module.startswith("apps.") for module in imported_modules)
+
+
+def test_base_startup_has_no_app_specific_retarget_paths(base_startup_module) -> None:
+    source = Path(base_startup_module.__file__).read_text(encoding="utf-8")
+
+    assert "apps.logistics" not in source
+    assert "apps.patrol" not in source
+
+
+def test_singleton_retarget_hook_is_called(base_startup_module) -> None:
+    calls = []
+    navigator = object()
+    state_monitor = object()
+
+    def hook(hook_navigator, hook_state_monitor) -> None:
+        calls.append((hook_navigator, hook_state_monitor))
+
+    base_startup_module.clear_singleton_retarget_hooks()
+    base_startup_module.register_singleton_retarget_hook(hook)
+
+    base_startup_module._retarget_existing_singleton_consumers(navigator, state_monitor)
+
+    assert calls == [(navigator, state_monitor)]
+
+
+def test_logistics_startup_registers_singleton_retarget_hook(logistics_startup_module) -> None:
+    hooks = logistics_startup_module.base_startup._singleton_retarget_hooks
+
+    assert logistics_startup_module._retarget_logistics_singletons in hooks
+
+
+def test_logistics_singleton_retarget_hook_updates_consumers(
+    logistics_startup_module,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dispatcher = SimpleNamespace(_navigator=None, _state_monitor=None)
+    battery_manager = SimpleNamespace(_dispatcher=None, _state_monitor=None)
+    watchdog = SimpleNamespace(_dispatcher=None, _state_monitor=None)
+    navigator = object()
+    state_monitor = object()
+
+    monkeypatch.setattr(logistics_startup_module, "get_dispatcher", lambda: dispatcher)
+    monkeypatch.setattr(logistics_startup_module, "get_battery_manager", lambda: battery_manager)
+    monkeypatch.setattr(logistics_startup_module, "get_watchdog", lambda: watchdog)
+
+    logistics_startup_module._retarget_logistics_singletons(navigator, state_monitor)
+
+    assert dispatcher._navigator is navigator
+    assert dispatcher._state_monitor is state_monitor
+    assert battery_manager._dispatcher is dispatcher
+    assert battery_manager._state_monitor is state_monitor
+    assert watchdog._dispatcher is dispatcher
+    assert watchdog._state_monitor is state_monitor
 
 
 def test_shared_runtime_startup_is_compatibility_shim(base_startup_module) -> None:

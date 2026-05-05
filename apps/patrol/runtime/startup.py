@@ -25,6 +25,15 @@ def get_patrol_queue():
     return queue_module.PatrolQueue()
 
 
+def _retarget_patrol_singletons(navigator, state_monitor) -> None:
+    patrol_dispatcher = get_patrol_dispatcher()
+    if hasattr(patrol_dispatcher, "_navigator"):
+        patrol_dispatcher._navigator = navigator
+
+
+base_startup.register_singleton_retarget_hook(_retarget_patrol_singletons)
+
+
 async def _run_shutdown_steps(steps: list[tuple[str, Callable[[], Awaitable[None]]]]) -> list[tuple[str, str]]:
     errors: list[tuple[str, str]] = []
     for name, stop_callable in steps:
