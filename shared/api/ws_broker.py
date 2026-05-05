@@ -167,7 +167,7 @@ class WebSocketBroker:
         robot_id = payload.get("robot_id")
         message = {
             "type": "event",
-            "event_name": event.name.value,
+            "event_name": event.name.value if hasattr(event.name, "value") else str(event.name),
             "event_id": event.event_id,
             "timestamp": event.timestamp.isoformat(),
             "source": event.source,

@@ -454,7 +454,7 @@ class Database:
                 (
                     event.event_id,
                     event.timestamp.isoformat(),
-                    event.name.value,
+                    event.name.value if hasattr(event.name, "value") else str(event.name),
                     json.dumps(event.payload or {}),
                     event.source,
                     event.task_id,
