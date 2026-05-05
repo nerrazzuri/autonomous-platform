@@ -229,8 +229,8 @@ def test_loads_provisioning_written_robots_yaml(tmp_path: Path, monkeypatch: pyt
         ProvisionResult(
             success=True,
             robot_id="logistics_01",
-            dog_mac="aa:bb:cc:dd:ee:01",
-            dog_ip="192.168.1.50",
+            quadruped_mac="aa:bb:cc:dd:ee:01",
+            quadruped_ip="192.168.1.50",
         ),
         "logistics",
         config_path,

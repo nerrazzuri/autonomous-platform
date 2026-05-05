@@ -162,7 +162,7 @@ class ProvisionScanResponse(BaseModel):
 
 
 class ProvisionStartRequest(BaseModel):
-    dog_ap_ssid: str
+    quadruped_ap_ssid: str
     target_wifi_ssid: str
     target_wifi_password: str
     role: str
@@ -184,8 +184,8 @@ class ProvisionStatusResponse(BaseModel):
     status: str
     message: str | None = None
     robot_id: str | None = None
-    dog_mac: str | None = None
-    dog_ip: str | None = None
+    quadruped_mac: str | None = None
+    quadruped_ip: str | None = None
 
 
 class ProvisionedRobotResponse(BaseModel):
@@ -353,7 +353,7 @@ def _run_provisioning_job(
 ) -> None:
     _set_provision_job(job_id, status="running", message="Provisioning started")
     try:
-        result = provision_backend.provision_dog(request)
+        result = provision_backend.provision_quadruped(request)
         safe_message = _sanitize_provisioning_message(
             result.message,
             target_wifi_password=request.target_wifi_password,
@@ -367,7 +367,7 @@ def _run_provisioning_job(
                 robot_id=result.robot_id,
                 job_id=job_id,
                 message=safe_message or "Provisioning failed",
-                metadata={"role": request.role, "dog_mac": result.dog_mac, "dog_ip": result.dog_ip},
+                metadata={"role": request.role, "quadruped_mac": result.quadruped_mac, "quadruped_ip": result.quadruped_ip},
             )
             emit_alert(
                 severity="error",
@@ -376,15 +376,15 @@ def _run_provisioning_job(
                 message=safe_message or "Provisioning failed",
                 robot_id=result.robot_id,
                 job_id=job_id,
-                metadata={"role": request.role, "dog_mac": result.dog_mac, "dog_ip": result.dog_ip},
+                metadata={"role": request.role, "quadruped_mac": result.quadruped_mac, "quadruped_ip": result.quadruped_ip},
             )
             _set_provision_job(
                 job_id,
                 status="failed",
                 message=safe_message or "Provisioning failed",
                 robot_id=result.robot_id,
-                dog_mac=result.dog_mac,
-                dog_ip=result.dog_ip,
+                quadruped_mac=result.quadruped_mac,
+                quadruped_ip=result.quadruped_ip,
             )
             return
 
@@ -405,8 +405,8 @@ def _run_provisioning_job(
             metadata={
                 "role": request.role,
                 "display_name": display_name,
-                "dog_mac": entry.get("mac"),
-                "dog_ip": entry.get("quadruped_ip"),
+                "quadruped_mac": entry.get("mac"),
+                "quadruped_ip": entry.get("quadruped_ip"),
             },
         )
         emit_alert(
@@ -419,8 +419,8 @@ def _run_provisioning_job(
             metadata={
                 "role": request.role,
                 "display_name": display_name,
-                "dog_mac": entry.get("mac"),
-                "dog_ip": entry.get("quadruped_ip"),
+                "quadruped_mac": entry.get("mac"),
+                "quadruped_ip": entry.get("quadruped_ip"),
             },
         )
         _set_provision_job(
@@ -428,8 +428,8 @@ def _run_provisioning_job(
             status="succeeded",
             message=safe_message or "Provisioning complete",
             robot_id=entry.get("robot_id"),
-            dog_mac=entry.get("mac"),
-            dog_ip=entry.get("quadruped_ip"),
+            quadruped_mac=entry.get("mac"),
+            quadruped_ip=entry.get("quadruped_ip"),
         )
     except Exception as exc:
         safe_message = _sanitize_provisioning_message(
@@ -444,7 +444,7 @@ def _run_provisioning_job(
             robot_id=request.robot_id,
             job_id=job_id,
             message=safe_message or "Provisioning failed",
-            metadata={"role": request.role, "dog_ap_ssid": request.dog_ap_ssid},
+            metadata={"role": request.role, "quadruped_ap_ssid": request.quadruped_ap_ssid},
         )
         emit_alert(
             severity="error",
@@ -453,7 +453,7 @@ def _run_provisioning_job(
             message=safe_message or "Provisioning failed",
             robot_id=request.robot_id,
             job_id=job_id,
-            metadata={"role": request.role, "dog_ap_ssid": request.dog_ap_ssid},
+            metadata={"role": request.role, "quadruped_ap_ssid": request.quadruped_ap_ssid},
         )
         _set_provision_job(job_id, status="failed", message=safe_message or "Provisioning failed")
 
@@ -739,7 +739,7 @@ def create_app() -> FastAPI:
     async def provision_start(request: ProvisionStartRequest) -> ProvisionJobResponse:
         try:
             provision_request = ProvisionRequest(
-                dog_ap_ssid=request.dog_ap_ssid,
+                quadruped_ap_ssid=request.quadruped_ap_ssid,
                 target_wifi_ssid=request.target_wifi_ssid,
                 target_wifi_password=request.target_wifi_password,
                 role=request.role,
@@ -762,7 +762,7 @@ def create_app() -> FastAPI:
             message="Provisioning queued",
             metadata={
                 "role": request.role,
-                "dog_ap_ssid": request.dog_ap_ssid,
+                "quadruped_ap_ssid": request.quadruped_ap_ssid,
                 "target_wifi_ssid": request.target_wifi_ssid,
                 "display_name": request.display_name,
                 "pc_wifi_iface": request.pc_wifi_iface,
@@ -794,8 +794,8 @@ def create_app() -> FastAPI:
             status=job.get("status", "queued"),
             message=job.get("message"),
             robot_id=job.get("robot_id"),
-            dog_mac=job.get("dog_mac"),
-            dog_ip=job.get("dog_ip"),
+            quadruped_mac=job.get("quadruped_mac"),
+            quadruped_ip=job.get("quadruped_ip"),
         )
 
     @application.get(
@@ -840,7 +840,7 @@ def create_app() -> FastAPI:
             actor_type="api",
             robot_id=robot_id,
             message="Provisioned robot record removed",
-            metadata={"role": removed.get("role"), "dog_mac": removed.get("mac")},
+            metadata={"role": removed.get("role"), "quadruped_mac": removed.get("mac")},
         )
         return ProvisionedRobotResponse(
             robot_id=str(removed.get("robot_id")),

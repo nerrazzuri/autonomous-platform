@@ -3,15 +3,15 @@ set -euo pipefail
 
 START_MOTION_CONTROL_PATH="/opt/app_launch/start_motion_control.sh"
 ROBOT_LAUNCH_SERVICE_PATH="/etc/systemd/system/robot-launch.service"
-TMP_DOG_MAC_PATH="/tmp/dog_mac"
-TMP_DOG_IP_PATH="/tmp/dog_ip"
+TMP_QUADRUPED_MAC_PATH="/tmp/quadruped_mac"
+TMP_QUADRUPED_IP_PATH="/tmp/quadruped_ip"
 
-START_MOTION_CONTROL_START_MARKER="# DOG_WIFI_PROVISION_START"
-START_MOTION_CONTROL_END_MARKER="# DOG_WIFI_PROVISION_END"
-ROBOT_LAUNCH_UNIT_START_MARKER="# DOG_WIFI_PROVISION_UNIT_START"
-ROBOT_LAUNCH_UNIT_END_MARKER="# DOG_WIFI_PROVISION_UNIT_END"
-ROBOT_LAUNCH_SERVICE_START_MARKER="# DOG_WIFI_PROVISION_SERVICE_START"
-ROBOT_LAUNCH_SERVICE_END_MARKER="# DOG_WIFI_PROVISION_SERVICE_END"
+START_MOTION_CONTROL_START_MARKER="# QUADRUPED_WIFI_PROVISION_START"
+START_MOTION_CONTROL_END_MARKER="# QUADRUPED_WIFI_PROVISION_END"
+ROBOT_LAUNCH_UNIT_START_MARKER="# QUADRUPED_WIFI_PROVISION_UNIT_START"
+ROBOT_LAUNCH_UNIT_END_MARKER="# QUADRUPED_WIFI_PROVISION_UNIT_END"
+ROBOT_LAUNCH_SERVICE_START_MARKER="# QUADRUPED_WIFI_PROVISION_SERVICE_START"
+ROBOT_LAUNCH_SERVICE_END_MARKER="# QUADRUPED_WIFI_PROVISION_SERVICE_END"
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -28,7 +28,7 @@ die() {
 
 usage() {
   cat <<'EOF'
-Usage: sudo dog_wifi_provision.sh <target_wifi_ssid> <target_wifi_password>
+Usage: sudo quadruped_wifi_provision.sh <target_wifi_ssid> <target_wifi_password>
 
 Pass an empty string as <target_wifi_password> to connect to an open network.
 EOF
@@ -247,7 +247,7 @@ patch_start_motion_control() {
 ${START_MOTION_CONTROL_START_MARKER}
 SDK_CLIENT_IP="\$(ip -4 addr show wlan0 | awk '/inet / {print \$2}' | cut -d/ -f1 | head -n1)"
 if [ -z "\${SDK_CLIENT_IP}" ]; then
-  echo "[DOG_WIFI_PROVISION] Failed to determine wlan0 IPv4 address" >&2
+  echo "[QUADRUPED_WIFI_PROVISION] Failed to determine wlan0 IPv4 address" >&2
   exit 1
 fi
 export SDK_CLIENT_IP
@@ -350,8 +350,8 @@ connect_wlan0() {
 main() {
   local target_wifi_ssid
   local target_wifi_password
-  local dog_mac
-  local dog_ip
+  local quadruped_mac
+  local quadruped_ip
 
   if [ "${EUID}" -ne 0 ]; then
     die "This script must be run as root"
@@ -375,16 +375,16 @@ main() {
 
   [ -d /sys/class/net/wlan0 ] || die "wlan0 interface not found"
 
-  dog_mac=$(get_wlan0_mac)
-  printf '%s\n' "${dog_mac}" > "${TMP_DOG_MAC_PATH}"
-  log "Recorded wlan0 MAC address to ${TMP_DOG_MAC_PATH}: ${dog_mac}"
+  quadruped_mac=$(get_wlan0_mac)
+  printf '%s\n' "${quadruped_mac}" > "${TMP_QUADRUPED_MAC_PATH}"
+  log "Recorded wlan0 MAC address to ${TMP_QUADRUPED_MAC_PATH}: ${quadruped_mac}"
 
   connect_wlan0 "${target_wifi_ssid}" "${target_wifi_password}"
 
-  dog_ip=$(wait_for_wlan0_ip) || die "Timed out waiting for wlan0 IPv4 address"
-  printf '%s\n' "${dog_ip}" > "${TMP_DOG_IP_PATH}"
-  log "Recorded wlan0 IP address to ${TMP_DOG_IP_PATH}: ${dog_ip}"
-  log "Detected robot wlan0 IP: ${dog_ip}"
+  quadruped_ip=$(wait_for_wlan0_ip) || die "Timed out waiting for wlan0 IPv4 address"
+  printf '%s\n' "${quadruped_ip}" > "${TMP_QUADRUPED_IP_PATH}"
+  log "Recorded wlan0 IP address to ${TMP_QUADRUPED_IP_PATH}: ${quadruped_ip}"
+  log "Detected robot wlan0 IP: ${quadruped_ip}"
 
   patch_start_motion_control
   patch_robot_launch_service

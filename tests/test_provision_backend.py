@@ -22,8 +22,8 @@ def test_missing_robots_yaml_creates_file(tmp_path: Path) -> None:
     entry = write_robot_entry(
         ProvisionResult(
             success=True,
-            dog_mac="aa:bb:cc:dd:ee:01",
-            dog_ip="192.168.1.50",
+            quadruped_mac="aa:bb:cc:dd:ee:01",
+            quadruped_ip="192.168.1.50",
         ),
         "logistics",
         robots_yaml_path,
@@ -74,8 +74,8 @@ def test_append_new_robot_preserves_existing_entries(tmp_path: Path) -> None:
     write_robot_entry(
         ProvisionResult(
             success=True,
-            dog_mac="aa:bb:cc:dd:ee:02",
-            dog_ip="192.168.1.51",
+            quadruped_mac="aa:bb:cc:dd:ee:02",
+            quadruped_ip="192.168.1.51",
         ),
         "logistics",
         robots_yaml_path,
@@ -131,8 +131,8 @@ def test_same_mac_updates_existing_entry_without_duplicate(tmp_path: Path) -> No
     entry = write_robot_entry(
         ProvisionResult(
             success=True,
-            dog_mac="aa:bb:cc:dd:ee:01",
-            dog_ip="192.168.1.99",
+            quadruped_mac="aa:bb:cc:dd:ee:01",
+            quadruped_ip="192.168.1.99",
         ),
         "patrol",
         robots_yaml_path,
@@ -161,8 +161,8 @@ def test_explicit_robot_id_is_used(tmp_path: Path) -> None:
         ProvisionResult(
             success=True,
             robot_id="custom_01",
-            dog_mac="aa:bb:cc:dd:ee:03",
-            dog_ip="192.168.1.52",
+            quadruped_mac="aa:bb:cc:dd:ee:03",
+            quadruped_ip="192.168.1.52",
         ),
         "patrol",
         robots_yaml_path,
@@ -196,8 +196,8 @@ def test_generated_robot_id_avoids_collisions(tmp_path: Path) -> None:
     entry = write_robot_entry(
         ProvisionResult(
             success=True,
-            dog_mac="aa:bb:cc:dd:ee:02",
-            dog_ip="192.168.1.51",
+            quadruped_mac="aa:bb:cc:dd:ee:02",
+            quadruped_ip="192.168.1.51",
         ),
         "logistics",
         robots_yaml_path,
@@ -211,8 +211,8 @@ def test_invalid_role_raises(tmp_path: Path) -> None:
         write_robot_entry(
             ProvisionResult(
                 success=True,
-                dog_mac="aa:bb:cc:dd:ee:01",
-                dog_ip="192.168.1.50",
+                quadruped_mac="aa:bb:cc:dd:ee:01",
+                quadruped_ip="192.168.1.50",
             ),
             "security",
             tmp_path / "robots.yaml",
@@ -225,8 +225,8 @@ def test_registered_custom_role_writes_robot_entry(tmp_path: Path) -> None:
         entry = write_robot_entry(
             ProvisionResult(
                 success=True,
-                dog_mac="aa:bb:cc:dd:ee:01",
-                dog_ip="192.168.1.50",
+                quadruped_mac="aa:bb:cc:dd:ee:01",
+                quadruped_ip="192.168.1.50",
             ),
             "inspection",
             tmp_path / "robots.yaml",
@@ -243,8 +243,8 @@ def test_unsuccessful_provision_result_raises(tmp_path: Path) -> None:
         write_robot_entry(
             ProvisionResult(
                 success=False,
-                dog_mac="aa:bb:cc:dd:ee:01",
-                dog_ip="192.168.1.50",
+                quadruped_mac="aa:bb:cc:dd:ee:01",
+                quadruped_ip="192.168.1.50",
             ),
             "logistics",
             tmp_path / "robots.yaml",
@@ -252,24 +252,24 @@ def test_unsuccessful_provision_result_raises(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("dog_mac", "dog_ip", "expected_match"),
+    ("quadruped_mac", "quadruped_ip", "expected_match"),
     [
-        (None, "192.168.1.50", "dog_mac"),
-        ("aa:bb:cc:dd:ee:01", None, "dog_ip"),
+        (None, "192.168.1.50", "quadruped_mac"),
+        ("aa:bb:cc:dd:ee:01", None, "quadruped_ip"),
     ],
 )
 def test_missing_mac_or_ip_raises(
     tmp_path: Path,
-    dog_mac: str | None,
-    dog_ip: str | None,
+    quadruped_mac: str | None,
+    quadruped_ip: str | None,
     expected_match: str,
 ) -> None:
     with pytest.raises(ProvisioningError, match=expected_match):
         write_robot_entry(
             ProvisionResult(
                 success=True,
-                dog_mac=dog_mac,
-                dog_ip=dog_ip,
+                quadruped_mac=quadruped_mac,
+                quadruped_ip=quadruped_ip,
             ),
             "logistics",
             tmp_path / "robots.yaml",
@@ -301,8 +301,8 @@ def test_existing_disabled_robot_stays_disabled_when_updated(tmp_path: Path) -> 
     write_robot_entry(
         ProvisionResult(
             success=True,
-            dog_mac="aa:bb:cc:dd:ee:04",
-            dog_ip="192.168.1.61",
+            quadruped_mac="aa:bb:cc:dd:ee:04",
+            quadruped_ip="192.168.1.61",
         ),
         "patrol",
         robots_yaml_path,
@@ -398,7 +398,7 @@ def test_find_ip_by_mac_raises_when_not_found(monkeypatch: pytest.MonkeyPatch) -
         provision_backend.find_ip_by_mac("aa:bb:cc:dd:ee:99", timeout=0.5, poll_interval=0.01)
 
 
-def test_ensure_remote_dog_script_uploads_and_chmods(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_remote_quadruped_script_uploads_and_chmods(monkeypatch: pytest.MonkeyPatch) -> None:
     uploads: list[tuple[str, str]] = []
     commands: list[str] = []
 
@@ -419,12 +419,12 @@ def test_ensure_remote_dog_script_uploads_and_chmods(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(provision_backend, "run_remote_command", fake_run_remote_command)
 
-    provision_backend.ensure_remote_dog_script(FakeClient())
+    provision_backend.ensure_remote_quadruped_script(FakeClient())
 
     assert uploads
-    assert uploads[0][0].endswith("scripts/dog_wifi_provision.sh")
-    assert uploads[0][1] == "/usr/local/bin/dog_wifi_provision.sh"
-    assert commands == ["sudo chmod +x /usr/local/bin/dog_wifi_provision.sh"]
+    assert uploads[0][0].endswith("scripts/quadruped_wifi_provision.sh")
+    assert uploads[0][1] == "/usr/local/bin/quadruped_wifi_provision.sh"
+    assert commands == ["sudo chmod +x /usr/local/bin/quadruped_wifi_provision.sh"]
 
 
 def test_patch_sdk_config_issues_expected_remote_commands(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -474,7 +474,7 @@ def test_get_pc_ip_for_target_returns_mocked_local_ip(monkeypatch: pytest.Monkey
     assert provision_backend.get_pc_ip_for_target("192.168.1.50") == "192.168.1.10"
 
 
-def test_provision_dog_happy_path_with_mocked_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_provision_quadruped_happy_path_with_mocked_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, object]] = []
 
     class FakeClient:
@@ -487,18 +487,18 @@ def test_provision_dog_happy_path_with_mocked_helpers(monkeypatch: pytest.Monkey
         calls.append(("ssh_connect", (host, username, password, timeout)))
         return client
 
-    def fake_ensure_remote_dog_script(ssh_client) -> None:
-        calls.append(("ensure_remote_dog_script", ssh_client))
+    def fake_ensure_remote_quadruped_script(ssh_client) -> None:
+        calls.append(("ensure_remote_quadruped_script", ssh_client))
 
     def fake_run_remote_command(_client, command: str, **_kwargs):
         calls.append(("run_remote_command", command))
-        if command.startswith("sudo /usr/local/bin/dog_wifi_provision.sh"):
+        if command.startswith("sudo /usr/local/bin/quadruped_wifi_provision.sh"):
             assert "'FACTORY_WIFI'" in command
             assert "'secret'" in command
             return ""
-        if command == "cat /tmp/dog_mac":
+        if command == "cat /tmp/quadruped_mac":
             return "aa:bb:cc:dd:ee:01\n"
-        if command == "cat /tmp/dog_ip":
+        if command == "cat /tmp/quadruped_ip":
             return "192.168.1.50\n"
         raise AssertionError(f"Unexpected command: {command}")
 
@@ -514,15 +514,15 @@ def test_provision_dog_happy_path_with_mocked_helpers(monkeypatch: pytest.Monkey
         calls.append(("patch_sdk_config", (robot_ip, pc_ip, username, password)))
 
     monkeypatch.setattr(provision_backend, "ssh_connect", fake_ssh_connect)
-    monkeypatch.setattr(provision_backend, "ensure_remote_dog_script", fake_ensure_remote_dog_script)
+    monkeypatch.setattr(provision_backend, "ensure_remote_quadruped_script", fake_ensure_remote_quadruped_script)
     monkeypatch.setattr(provision_backend, "run_remote_command", fake_run_remote_command)
     monkeypatch.setattr(provision_backend, "find_ip_by_mac", fake_find_ip_by_mac)
     monkeypatch.setattr(provision_backend, "get_pc_ip_for_target", fake_get_pc_ip_for_target)
     monkeypatch.setattr(provision_backend, "patch_sdk_config", fake_patch_sdk_config)
 
-    result = provision_backend.provision_dog(
+    result = provision_backend.provision_quadruped(
         ProvisionRequest(
-            dog_ap_ssid="D1-Ultra:aa:bb:cc:dd:ee:01",
+            quadruped_ap_ssid="D1-Ultra:aa:bb:cc:dd:ee:01",
             target_wifi_ssid="FACTORY_WIFI",
             target_wifi_password="secret",
             role="logistics",
@@ -534,22 +534,22 @@ def test_provision_dog_happy_path_with_mocked_helpers(monkeypatch: pytest.Monkey
 
     assert result.success is True
     assert result.robot_id == "logistics_01"
-    assert result.dog_mac == "aa:bb:cc:dd:ee:01"
-    assert result.dog_ip == "192.168.1.50"
+    assert result.quadruped_mac == "aa:bb:cc:dd:ee:01"
+    assert result.quadruped_ip == "192.168.1.50"
     assert result.pc_ip == "192.168.1.10"
     assert result.role == "logistics"
     assert ("patch_sdk_config", ("192.168.1.50", "192.168.1.10", "firefly", "pw")) in calls
 
 
-def test_provision_dog_failure_path_returns_unsuccessful_result(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_provision_quadruped_failure_path_returns_unsuccessful_result(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_ssh_connect(*_args, **_kwargs):
         raise ProvisioningError("SSH connect failed")
 
     monkeypatch.setattr(provision_backend, "ssh_connect", fake_ssh_connect)
 
-    result = provision_backend.provision_dog(
+    result = provision_backend.provision_quadruped(
         ProvisionRequest(
-            dog_ap_ssid="D1-Ultra:aa:bb:cc:dd:ee:01",
+            quadruped_ap_ssid="D1-Ultra:aa:bb:cc:dd:ee:01",
             target_wifi_ssid="FACTORY_WIFI",
             target_wifi_password="secret",
             role="logistics",
@@ -569,9 +569,9 @@ def test_backend_does_not_log_wifi_password_on_failure(
 
     monkeypatch.setattr(provision_backend, "ssh_connect", fake_ssh_connect)
 
-    provision_backend.provision_dog(
+    provision_backend.provision_quadruped(
         ProvisionRequest(
-            dog_ap_ssid="D1-Ultra:aa:bb:cc:dd:ee:01",
+            quadruped_ap_ssid="D1-Ultra:aa:bb:cc:dd:ee:01",
             target_wifi_ssid="FACTORY_WIFI",
             target_wifi_password="secret",
             role="logistics",

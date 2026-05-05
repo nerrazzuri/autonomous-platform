@@ -33,7 +33,7 @@ You can validate the provisioning request shape without touching the robot:
 
 ```bash
 python scripts/provision_cli.py \
-  --dog-ap-ssid "D1-Ultra:aa:bb:cc:dd:ee" \
+  --quadruped-ap-ssid "D1-Ultra:aa:bb:cc:dd:ee" \
   --target-wifi-ssid "FACTORY_WIFI" \
   --target-wifi-password "secret" \
   --role logistics \
@@ -49,7 +49,7 @@ For a real CLI-driven provisioning run:
 
 ```bash
 python scripts/provision_cli.py \
-  --dog-ap-ssid "D1-Ultra:aa:bb:cc:dd:ee" \
+  --quadruped-ap-ssid "D1-Ultra:aa:bb:cc:dd:ee" \
   --target-wifi-ssid "FACTORY_WIFI" \
   --target-wifi-password "secret" \
   --role logistics \

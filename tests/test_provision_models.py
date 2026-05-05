@@ -32,7 +32,7 @@ def test_wifi_network_construction_and_serialization() -> None:
 
 def test_provision_request_defaults() -> None:
     request = ProvisionRequest(
-        dog_ap_ssid="Robot-AP-01",
+        quadruped_ap_ssid="Robot-AP-01",
         target_wifi_ssid="WarehouseWiFi",
         target_wifi_password="secret-password",
     )
@@ -47,8 +47,8 @@ def test_provision_result_success_and_failure_construction() -> None:
     success = ProvisionResult(
         success=True,
         robot_id="logistics_01",
-        dog_mac="AA:BB:CC:DD:EE:FF",
-        dog_ip="192.168.1.101",
+        quadruped_mac="AA:BB:CC:DD:EE:FF",
+        quadruped_ip="192.168.1.101",
         pc_ip="192.168.1.10",
         role="logistics",
         message="Provisioning complete",
@@ -67,14 +67,14 @@ def test_provision_result_success_and_failure_construction() -> None:
 def test_robot_connection_config_construction() -> None:
     connection = RobotConnectionConfig(
         robot_id="patrol_01",
-        dog_ip="192.168.1.150",
+        quadruped_ip="192.168.1.150",
         pc_ip="192.168.1.10",
         sdk_port=43988,
     )
 
     assert asdict(connection) == {
         "robot_id": "patrol_01",
-        "dog_ip": "192.168.1.150",
+        "quadruped_ip": "192.168.1.150",
         "pc_ip": "192.168.1.10",
         "sdk_port": 43988,
         "ssh_user": "firefly",
@@ -84,7 +84,7 @@ def test_robot_connection_config_construction() -> None:
 def test_robot_status_construction() -> None:
     status = RobotStatus(
         robot_id="logistics_01",
-        dog_ip="192.168.1.101",
+        quadruped_ip="192.168.1.101",
         connected=True,
         provisioned=True,
         message="Robot reachable",
@@ -92,7 +92,7 @@ def test_robot_status_construction() -> None:
 
     assert asdict(status) == {
         "robot_id": "logistics_01",
-        "dog_ip": "192.168.1.101",
+        "quadruped_ip": "192.168.1.101",
         "connected": True,
         "provisioned": True,
         "message": "Robot reachable",
@@ -102,7 +102,7 @@ def test_robot_status_construction() -> None:
 def test_invalid_role_raises() -> None:
     with pytest.raises(ValueError, match="role"):
         ProvisionRequest(
-            dog_ap_ssid="Robot-AP-01",
+            quadruped_ap_ssid="Robot-AP-01",
             target_wifi_ssid="WarehouseWiFi",
             target_wifi_password="secret-password",
             role="security",
@@ -113,7 +113,7 @@ def test_registered_custom_role_is_valid() -> None:
     register_role("inspection")
     try:
         request = ProvisionRequest(
-            dog_ap_ssid="Robot-AP-01",
+            quadruped_ap_ssid="Robot-AP-01",
             target_wifi_ssid="WarehouseWiFi",
             target_wifi_password="secret-password",
             role="inspection",

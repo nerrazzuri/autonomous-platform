@@ -2,7 +2,7 @@ from shared.provisioning.provision_backend import (
     ProvisioningError,
     find_ip_by_mac,
     patch_sdk_config,
-    provision_dog,
+    provision_quadruped,
     scan_wifi_networks,
     write_robot_entry,
 )
@@ -26,8 +26,8 @@ __all__ = [
     "scan_wifi_networks",
     "find_ip_by_mac",
     "patch_sdk_config",
-    "provision_dog",
     "register_role",
     "unregister_role",
     "get_registered_roles",
+    "provision_quadruped",
 ]

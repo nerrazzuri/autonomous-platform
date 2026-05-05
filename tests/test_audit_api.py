@@ -40,7 +40,7 @@ class FakeProvisioningBackend:
     def scan_wifi_networks(self):
         return self.scan_result
 
-    def provision_dog(self, _request):
+    def provision_quadruped(self, _request):
         if self.provision_error is not None:
             raise self.provision_error
         return self.provision_result
@@ -56,8 +56,8 @@ class FakeProvisioningBackend:
         return {
             "robot_id": result.robot_id,
             "display_name": display_name,
-            "mac": result.dog_mac,
-            "quadruped_ip": result.dog_ip,
+            "mac": result.quadruped_mac,
+            "quadruped_ip": result.quadruped_ip,
             "role": role,
             "enabled": True,
             "sdk_lib_path": sdk_lib_path,
@@ -90,8 +90,8 @@ def audit_api_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     fake_backend.provision_result = ProvisionResult(
         success=True,
         robot_id="logistics_01",
-        dog_mac="aa:bb:cc:dd:ee:01",
-        dog_ip="192.168.1.50",
+        quadruped_mac="aa:bb:cc:dd:ee:01",
+        quadruped_ip="192.168.1.50",
         pc_ip="192.168.1.10",
         role="logistics",
     )
@@ -166,7 +166,7 @@ def test_successful_provisioning_creates_audit_events_without_password_leak(audi
         "/provision/start",
         headers=build_auth_header(TEST_SUPERVISOR_TOKEN),
         json={
-            "dog_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
+            "quadruped_ap_ssid": "D1-Ultra:aa:bb:cc:dd:ee",
             "target_wifi_ssid": "FACTORY_WIFI",
             "target_wifi_password": "secret-password",
             "role": "logistics",
