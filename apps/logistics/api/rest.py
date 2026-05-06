@@ -28,6 +28,7 @@ from shared.provisioning.provision_models import ProvisionRequest, WifiNetwork
 from shared.quadruped.robot_registry import RobotNotFoundError, get_robot_registry
 from shared.quadruped.sdk_adapter import SDKAdapter, get_sdk_adapter
 from shared.quadruped.state_monitor import QuadrupedState, StateMonitor, get_state_monitor
+from apps.logistics import events as logistics_events
 from apps.logistics.api.commissioning import create_commissioning_router
 from apps.logistics.api.hmi import create_hmi_router
 from apps.logistics.runtime.startup import shutdown_system, startup_system
@@ -932,7 +933,7 @@ def create_app() -> FastAPI:
 
         try:
             await get_event_bus().publish(
-                EventName.HUMAN_CONFIRMED_LOAD,
+                logistics_events.HUMAN_CONFIRMED_LOAD,
                 payload=_confirmation_payload(task_id, task),
                 source=EVENT_SOURCE,
                 task_id=task_id,
@@ -968,7 +969,7 @@ def create_app() -> FastAPI:
 
         try:
             await get_event_bus().publish(
-                EventName.HUMAN_CONFIRMED_UNLOAD,
+                logistics_events.HUMAN_CONFIRMED_UNLOAD,
                 payload=_confirmation_payload(task_id, task),
                 source=EVENT_SOURCE,
                 task_id=task_id,

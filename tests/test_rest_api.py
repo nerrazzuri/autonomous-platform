@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from apps.logistics import events as logistics_events
+
 
 TEST_OPERATOR_TOKEN = "test-operator-token"
 TEST_QA_TOKEN = "test-qa-token"
@@ -406,7 +408,7 @@ def test_confirm_load_success_publishes_event(rest_client) -> None:
     assert response.json() == {"message": "Load confirmed"}
     assert event_bus.published == [
         {
-            "event_name": "human.confirmed_load",
+            "event_name": logistics_events.HUMAN_CONFIRMED_LOAD,
             "payload": {
                 "task_id": "task-1",
                 "station_id": "A",
@@ -430,7 +432,7 @@ def test_confirm_unload_success_publishes_event(rest_client) -> None:
     assert response.json() == {"message": "Unload confirmed"}
     assert event_bus.published == [
         {
-            "event_name": "human.confirmed_unload",
+            "event_name": logistics_events.HUMAN_CONFIRMED_UNLOAD,
             "payload": {
                 "task_id": "task-2",
                 "station_id": "A",

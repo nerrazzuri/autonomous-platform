@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from apps.patrol import events as patrol_events
+
 
 class FakeCycle:
     def __init__(
@@ -88,7 +90,7 @@ async def test_run_once_creates_cycle_when_enabled(scheduler_env) -> None:
     async def callback(event):
         events.append(event)
 
-    event_bus.subscribe(module.EventName.PATROL_CYCLE_STARTED, callback, subscriber_name="test")
+    event_bus.subscribe(patrol_events.PATROL_CYCLE_STARTED, callback, subscriber_name="test")
 
     created = await scheduler.run_once()
     await event_bus.wait_until_idle()
@@ -175,11 +177,11 @@ async def test_patrol_suspended_and_resumed_events_toggle_state(scheduler_env) -
     scheduler, _queue, event_bus, module = scheduler_env
 
     await scheduler.start()
-    await event_bus.publish(module.EventName.PATROL_SUSPENDED, {})
+    await event_bus.publish(patrol_events.PATROL_SUSPENDED, {})
     await event_bus.wait_until_idle()
     assert (await scheduler.get_state()).suspended is True
 
-    await event_bus.publish(module.EventName.PATROL_RESUMED, {})
+    await event_bus.publish(patrol_events.PATROL_RESUMED, {})
     await event_bus.wait_until_idle()
     assert (await scheduler.get_state()).suspended is False
 
@@ -194,14 +196,14 @@ async def test_suspend_and_resume_methods_publish_events(scheduler_env) -> None:
     async def callback(event):
         events.append(event.name)
 
-    event_bus.subscribe(module.EventName.PATROL_SUSPENDED, callback, subscriber_name="test-suspend")
-    event_bus.subscribe(module.EventName.PATROL_RESUMED, callback, subscriber_name="test-resume")
+    event_bus.subscribe(patrol_events.PATROL_SUSPENDED, callback, subscriber_name="test-suspend")
+    event_bus.subscribe(patrol_events.PATROL_RESUMED, callback, subscriber_name="test-resume")
 
     await scheduler.suspend("manual")
     await scheduler.resume("manual")
     await event_bus.wait_until_idle()
 
-    assert events == [module.EventName.PATROL_SUSPENDED, module.EventName.PATROL_RESUMED]
+    assert events == [patrol_events.PATROL_SUSPENDED, patrol_events.PATROL_RESUMED]
 
 
 @pytest.mark.asyncio

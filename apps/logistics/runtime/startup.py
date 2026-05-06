@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
+from apps.logistics import events as logistics_events
 from apps.logistics.observability import register_logistics_alert_rules, register_logistics_websocket_events
 from apps.logistics.tasks.battery_manager import get_battery_manager
 from apps.logistics.tasks.dispatcher import get_dispatcher
@@ -36,6 +37,15 @@ def _retarget_logistics_singletons(navigator, state_monitor) -> None:
 
     if hasattr(watchdog, "_state_monitor"):
         watchdog._state_monitor = state_monitor
+
+    configure_hold_release_events = getattr(navigator, "configure_hold_release_events", None)
+    if callable(configure_hold_release_events):
+        configure_hold_release_events(
+            (
+                logistics_events.HUMAN_CONFIRMED_LOAD,
+                logistics_events.HUMAN_CONFIRMED_UNLOAD,
+            )
+        )
     if hasattr(watchdog, "_dispatcher"):
         watchdog._dispatcher = dispatcher
 

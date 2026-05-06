@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
+from apps.logistics import events as logistics_events
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.navigation.navigator import Navigator, NavigationResult, get_navigator
@@ -215,8 +216,8 @@ class Dispatcher:
         self._subscription_ids = [
             event_bus.subscribe(EventName.QUADRUPED_IDLE, self._on_quadruped_idle),
             event_bus.subscribe(EventName.QUADRUPED_ARRIVED_AT_WAYPOINT, self._on_arrived_at_waypoint),
-            event_bus.subscribe(EventName.HUMAN_CONFIRMED_LOAD, self._on_human_confirmed_load),
-            event_bus.subscribe(EventName.HUMAN_CONFIRMED_UNLOAD, self._on_human_confirmed_unload),
+            event_bus.subscribe(logistics_events.HUMAN_CONFIRMED_LOAD, self._on_human_confirmed_load),
+            event_bus.subscribe(logistics_events.HUMAN_CONFIRMED_UNLOAD, self._on_human_confirmed_unload),
             event_bus.subscribe(EventName.NAVIGATION_BLOCKED, self._on_navigation_blocked),
             event_bus.subscribe(EventName.NAVIGATION_COMPLETED, self._on_navigation_completed),
             event_bus.subscribe(EventName.NAVIGATION_FAILED, self._on_navigation_failed),

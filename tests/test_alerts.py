@@ -166,6 +166,7 @@ def test_warning_error_and_critical_alerts_create_audit_events(alerts_module, mo
 
 def test_shared_alert_rules_exclude_app_specific_events(alerts_module) -> None:
     from shared.core.event_bus import EventName
+    from apps.patrol import events as patrol_events
 
     alerts_module.clear_alert_rules()
     alerts_module.register_platform_alert_rules()
@@ -176,7 +177,7 @@ def test_shared_alert_rules_exclude_app_specific_events(alerts_module) -> None:
     assert EventName.ESTOP_TRIGGERED in registered_events
     assert EventName.ESTOP_RELEASED in registered_events
     assert EventName.TASK_FAILED not in registered_events
-    assert EventName.PATROL_CYCLE_FAILED not in registered_events
+    assert patrol_events.PATROL_CYCLE_FAILED not in registered_events
 
 
 @pytest.mark.asyncio
@@ -214,6 +215,7 @@ async def test_registered_app_alert_rule_emits_alert(alerts_module) -> None:
 
 
 def test_logistics_alert_registration_lives_in_app_layer(alerts_module) -> None:
+    from apps.patrol import events as patrol_events
     from apps.logistics.observability.alerts import register_logistics_alert_rules
     from shared.core.event_bus import EventName
 
@@ -223,13 +225,14 @@ def test_logistics_alert_registration_lives_in_app_layer(alerts_module) -> None:
     registered_events = {rule.event_name for rule in alerts_module.get_registered_alert_rules()}
 
     assert EventName.TASK_FAILED in registered_events
-    assert EventName.PATROL_CYCLE_FAILED not in registered_events
+    assert patrol_events.PATROL_CYCLE_FAILED not in registered_events
 
     alerts_module.clear_alert_rules()
     alerts_module.register_platform_alert_rules()
 
 
 def test_patrol_alert_registration_lives_in_app_layer(alerts_module) -> None:
+    from apps.patrol import events as patrol_events
     from apps.patrol.observability.alerts import register_patrol_alert_rules
     from shared.core.event_bus import EventName
 
@@ -238,7 +241,7 @@ def test_patrol_alert_registration_lives_in_app_layer(alerts_module) -> None:
 
     registered_events = {rule.event_name for rule in alerts_module.get_registered_alert_rules()}
 
-    assert EventName.PATROL_CYCLE_FAILED in registered_events
+    assert patrol_events.PATROL_CYCLE_FAILED in registered_events
     assert EventName.TASK_FAILED not in registered_events
 
     alerts_module.clear_alert_rules()

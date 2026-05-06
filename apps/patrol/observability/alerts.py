@@ -2,7 +2,8 @@ from __future__ import annotations
 
 """Patrol-specific alert rules registered from the app layer."""
 
-from shared.core.event_bus import Event, EventName
+from apps.patrol import events as patrol_events
+from shared.core.event_bus import Event
 from shared.observability.alerts import Alert, register_alert_rule
 
 
@@ -28,7 +29,7 @@ def _patrol_cycle_failed_alert(event: Event) -> Alert:
 
 def register_patrol_alert_rules() -> None:
     register_alert_rule(
-        event_name=EventName.PATROL_CYCLE_FAILED,
+        event_name=patrol_events.PATROL_CYCLE_FAILED,
         alert_type="patrol_cycle_failed",
         default_message="Patrol cycle failed",
         severity="error",

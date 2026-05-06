@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from shared.core.database import Database, DatabaseError, get_database, utc_now_iso
+from apps.patrol import events as patrol_events
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 
@@ -172,7 +173,7 @@ class PatrolQueue:
         return await self._transition_cycle(
             cycle_id,
             PatrolCycleStatus.ACTIVE,
-            event_name=EventName.PATROL_CYCLE_STARTED,
+            event_name=patrol_events.PATROL_CYCLE_STARTED,
             updates=lambda current: {
                 "started_at": current.started_at or utc_now_iso(),
             },
@@ -183,7 +184,7 @@ class PatrolQueue:
         return await self._transition_cycle(
             cycle_id,
             PatrolCycleStatus.COMPLETED,
-            event_name=EventName.PATROL_CYCLE_COMPLETED,
+            event_name=patrol_events.PATROL_CYCLE_COMPLETED,
             updates=lambda current: {
                 "completed_at": utc_now_iso(),
                 "waypoints_total": stats.get("waypoints_total", current.waypoints_total),
@@ -197,7 +198,7 @@ class PatrolQueue:
         return await self._transition_cycle(
             cycle_id,
             PatrolCycleStatus.FAILED,
-            event_name=EventName.PATROL_CYCLE_FAILED,
+            event_name=patrol_events.PATROL_CYCLE_FAILED,
             updates=lambda _current: {
                 "completed_at": utc_now_iso(),
                 "failure_reason": reason,
@@ -210,7 +211,7 @@ class PatrolQueue:
         return await self._transition_cycle(
             cycle_id,
             PatrolCycleStatus.SUSPENDED,
-            event_name=EventName.PATROL_SUSPENDED,
+            event_name=patrol_events.PATROL_SUSPENDED,
             updates=lambda current: {
                 "failure_reason": reason if reason is not None else current.failure_reason,
             },
@@ -220,7 +221,7 @@ class PatrolQueue:
         return await self._transition_cycle(
             cycle_id,
             PatrolCycleStatus.ACTIVE,
-            event_name=EventName.PATROL_RESUMED,
+            event_name=patrol_events.PATROL_RESUMED,
             updates=lambda current: {
                 "started_at": current.started_at or utc_now_iso(),
             },
@@ -281,7 +282,7 @@ class PatrolQueue:
         cycle_id: str,
         new_status: PatrolCycleStatus,
         *,
-        event_name: EventName,
+        event_name: EventName | str,
         updates,
     ) -> PatrolRecord:
         cycle_id = self._validate_non_empty("cycle_id", cycle_id)
@@ -381,7 +382,7 @@ class PatrolQueue:
             record.failure_reason,
         )
 
-    def _publish_event(self, event_name: EventName, record: PatrolRecord) -> None:
+    def _publish_event(self, event_name: EventName | str, record: PatrolRecord) -> None:
         try:
             get_event_bus().publish_nowait(
                 event_name,

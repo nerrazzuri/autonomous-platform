@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from apps.patrol.observation.observer import Observer, get_observer
 from shared.core.config import get_config
+from apps.patrol import events as patrol_events
 from shared.core.event_bus import EventBus, EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.navigation.navigator import Navigator, get_navigator
@@ -184,7 +185,7 @@ class PatrolDispatcher:
                 await self._set_state(consecutive_failures=0, last_result=result.message or "completed")
                 self._last_error = None
                 await self._publish_event(
-                    EventName.PATROL_CYCLE_COMPLETED,
+                    patrol_events.PATROL_CYCLE_COMPLETED,
                     {
                         "cycle_id": cycle.cycle_id,
                         "route_id": cycle.route_id,
@@ -231,14 +232,14 @@ class PatrolDispatcher:
             return
         await self._set_state(suspended=True, last_result=normalized_reason)
         await self._cancel_active_dispatches(normalized_reason)
-        await self._publish_event(EventName.PATROL_SUSPENDED, {"reason": normalized_reason}, task_id=self._active_cycle_id)
+        await self._publish_event(patrol_events.PATROL_SUSPENDED, {"reason": normalized_reason}, task_id=self._active_cycle_id)
 
     async def resume(self, reason: str = "resumed") -> None:
         normalized_reason = self._normalize_reason(reason, default="resumed")
         if not self._suspended:
             return
         await self._set_state(suspended=False, last_result=normalized_reason)
-        await self._publish_event(EventName.PATROL_RESUMED, {"reason": normalized_reason})
+        await self._publish_event(patrol_events.PATROL_RESUMED, {"reason": normalized_reason})
 
     async def get_state(self) -> PatrolDispatcherState:
         async with self._state_lock:
@@ -289,12 +290,12 @@ class PatrolDispatcher:
             return
         self._subscription_ids = [
             self._event_bus.subscribe(
-                EventName.PATROL_SUSPENDED,
+                patrol_events.PATROL_SUSPENDED,
                 self._handle_patrol_suspended,
                 subscriber_name="patrol-dispatcher",
             ),
             self._event_bus.subscribe(
-                EventName.PATROL_RESUMED,
+                patrol_events.PATROL_RESUMED,
                 self._handle_patrol_resumed,
                 subscriber_name="patrol-dispatcher",
             ),
@@ -418,7 +419,7 @@ class PatrolDispatcher:
                 logger.warning("Patrol cycle mark_failed skipped", extra={"cycle_id": cycle_id, "reason": normalized_reason})
 
         await self._publish_event(
-            EventName.PATROL_CYCLE_FAILED,
+            patrol_events.PATROL_CYCLE_FAILED,
             {
                 "cycle_id": cycle_id,
                 "route_id": route_id,
@@ -433,7 +434,7 @@ class PatrolDispatcher:
         if failures >= max_failures:
             await self._set_state(suspended=True)
             await self._publish_event(
-                EventName.PATROL_SUSPENDED,
+                patrol_events.PATROL_SUSPENDED,
                 {"reason": "max_consecutive_failures", "robot_id": robot_id},
                 task_id=cycle_id,
             )
@@ -469,7 +470,7 @@ class PatrolDispatcher:
 
     async def _publish_event(
         self,
-        event_name: EventName,
+        event_name: EventName | str,
         payload: dict[str, Any],
         *,
         task_id: str | None = None,

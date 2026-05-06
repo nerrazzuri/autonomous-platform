@@ -6,7 +6,7 @@ import asyncio
 import math
 import time
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Iterable
 
 from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
@@ -76,6 +76,7 @@ class Navigator:
         sdk_adapter: SDKAdapter | None = None,
         slam_provider: Any | None = None,
         robot_id: str = "default",
+        hold_release_event_names: Iterable[EventName | str] | None = None,
     ) -> None:
         config = get_config()
         self._route_store = route_store or get_route_store()
@@ -141,6 +142,7 @@ class Navigator:
         self._hold_event = asyncio.Event()
         self._subscription_ids: list[str] = []
         self._active_task_id: str | None = None
+        self._hold_release_event_names = tuple(hold_release_event_names or ())
 
         # Obstacle policy state — reset at the start of each navigation
         self._obstacle_count: int = 0
@@ -148,6 +150,15 @@ class Navigator:
         self._requires_hmi_confirmation: bool = False
         self._stable_clear_task: asyncio.Task[None] | None = None
         self._resume_ramp_started_at: float | None = None
+
+    def configure_hold_release_events(self, event_names: Iterable[EventName | str]) -> None:
+        """Configure app-owned events that release waypoint holds.
+
+        The navigator is shared platform mechanism; apps own the workflow
+        meaning of events that release a human-confirmation hold.
+        """
+
+        self._hold_release_event_names = tuple(event_names)
 
     async def execute_route(
         self,
@@ -442,11 +453,15 @@ class Navigator:
     def _subscribe_navigation_events(self) -> None:
         event_bus = get_event_bus()
         self._subscription_ids = [
-            event_bus.subscribe(EventName.HUMAN_CONFIRMED_LOAD, self._handle_human_confirmation),
-            event_bus.subscribe(EventName.HUMAN_CONFIRMED_UNLOAD, self._handle_human_confirmation),
-            event_bus.subscribe(EventName.OBSTACLE_DETECTED, self._handle_obstacle_detected),
-            event_bus.subscribe(EventName.OBSTACLE_CLEARED, self._handle_obstacle_cleared),
+            event_bus.subscribe(event_name, self._handle_human_confirmation)
+            for event_name in self._hold_release_event_names
         ]
+        self._subscription_ids.extend(
+            [
+                event_bus.subscribe(EventName.OBSTACLE_DETECTED, self._handle_obstacle_detected),
+                event_bus.subscribe(EventName.OBSTACLE_CLEARED, self._handle_obstacle_cleared),
+            ]
+        )
 
     def _unsubscribe_navigation_events(self) -> None:
         event_bus = get_event_bus()
