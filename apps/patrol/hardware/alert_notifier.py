@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from apps.patrol.observation.anomaly_log import AnomalyRecord
+from apps.patrol.config import get_patrol_config
 from shared.core.config import get_config
 from shared.core.logger import get_logger
 
@@ -60,7 +61,7 @@ class AlertNotifier:
         webhook_url: str | None = None,
         enabled: bool | None = None,
     ) -> None:
-        config_webhook_url = getattr(get_config().patrol, "webhook_url", None) if webhook_url is None else webhook_url
+        config_webhook_url = get_patrol_config(get_config()).webhook_url if webhook_url is None else webhook_url
         normalized_webhook_url = config_webhook_url.strip() if isinstance(config_webhook_url, str) else None
         self._webhook_url = normalized_webhook_url or None
         self._enabled = bool(self._webhook_url) if enabled is None else bool(enabled)

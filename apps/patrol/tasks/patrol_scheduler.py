@@ -4,6 +4,7 @@ import asyncio
 import importlib
 from dataclasses import dataclass
 
+from apps.patrol.config import get_patrol_config
 from shared.core.config import get_config
 from apps.patrol import events as patrol_events
 from shared.core.event_bus import EventBus, EventName, get_event_bus
@@ -46,7 +47,7 @@ class PatrolScheduler:
         patrol_interval_seconds: float | None = None,
         default_route_id: str | None = None,
     ) -> None:
-        config = get_config().patrol
+        config = get_patrol_config(get_config())
         resolved_interval = config.patrol_interval_seconds if patrol_interval_seconds is None else patrol_interval_seconds
         resolved_route = getattr(config, "default_route_id", "PATROL_NORTH_LOOP") if default_route_id is None else default_route_id
 

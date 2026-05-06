@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
+from apps.patrol.config import get_patrol_config
 from shared.core.config import get_config
 from apps.patrol import events as patrol_events
 from shared.core.event_bus import EventBus, EventName, get_event_bus
@@ -49,7 +50,7 @@ class PatrolWatchdog:
         patrol_interval_seconds: float | None = None,
         loop_interval_seconds: float = 5.0,
     ) -> None:
-        config = get_config().patrol
+        config = get_patrol_config(get_config())
         resolved_patrol_interval = config.patrol_interval_seconds if patrol_interval_seconds is None else patrol_interval_seconds
 
         if not isinstance(loop_interval_seconds, (int, float)) or float(loop_interval_seconds) <= 0:

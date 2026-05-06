@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from apps.patrol.observation.observer import Observer, get_observer
 from shared.core.config import get_config
 from apps.patrol import events as patrol_events
+from apps.patrol.config import get_patrol_config
 from shared.core.event_bus import EventBus, EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.navigation.navigator import Navigator, get_navigator
@@ -430,7 +431,7 @@ class PatrolDispatcher:
             task_id=cycle_id,
         )
 
-        max_failures = int(get_config().patrol.max_consecutive_failures)
+        max_failures = int(get_patrol_config(get_config()).max_consecutive_failures)
         if failures >= max_failures:
             await self._set_state(suspended=True)
             await self._publish_event(

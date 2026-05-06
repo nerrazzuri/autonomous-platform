@@ -43,8 +43,9 @@ class RouteSection(BaseModel):
     hot_reload_enabled: bool = True
 
 
-# Legacy app-specific config retained for backward compatibility.
-# Post-POC: move app-specific config composition into app startup layer.
+# Deprecated app compatibility section. Do not add new app-specific config here.
+# New app config belongs under apps/<app>/config or a future app config registry.
+# Post-POC: move app-specific config composition out of shared/core/config.py.
 class LogisticsSection(BaseModel):
     routes_file: str = "data/logistics_routes.json"
     allow_placeholder_routes: bool = True
@@ -101,8 +102,9 @@ class NavigationSection(BaseModel):
         return value
 
 
-# Legacy app-specific config retained for backward compatibility.
-# Post-POC: move app-specific config composition into app startup layer.
+# Deprecated app compatibility section. Do not add new app-specific config here.
+# New app config belongs under apps/<app>/config or a future app config registry.
+# Post-POC: move app-specific config composition out of shared/core/config.py.
 class PatrolSection(BaseModel):
     schedule_enabled: bool = True
     patrol_interval_seconds: int = Field(default=1800, gt=0)
@@ -246,14 +248,14 @@ class AppConfig(BaseModel):
     workstation: WorkstationSection = Field(default_factory=WorkstationSection)
     database: DatabaseSection = Field(default_factory=DatabaseSection)
     routes: RouteSection = Field(default_factory=RouteSection)
-    # Legacy app-specific config retained for backward compatibility.
-    # Post-POC: move app-specific config composition into app startup layer.
+    # Deprecated app compatibility section. Do not add new app-specific config here.
+    # New app config belongs under apps/<app>/config or a future app config registry.
     logistics: LogisticsSection = Field(default_factory=LogisticsSection)
     battery: BatterySection = Field(default_factory=BatterySection)
     heartbeat: HeartbeatSection = Field(default_factory=HeartbeatSection)
     navigation: NavigationSection = Field(default_factory=NavigationSection)
-    # Legacy app-specific config retained for backward compatibility.
-    # Post-POC: move app-specific config composition into app startup layer.
+    # Deprecated app compatibility section. Do not add new app-specific config here.
+    # New app config belongs under apps/<app>/config or a future app config registry.
     patrol: PatrolSection = Field(default_factory=PatrolSection)
     vision: VisionSection = Field(default_factory=VisionSection)
     task_scoring: TaskScoringSection = Field(default_factory=TaskScoringSection)

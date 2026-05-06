@@ -97,6 +97,51 @@ def test_default_config_includes_patrol_and_vision_sections(monkeypatch: pytest.
     assert config.vision.api_timeout_seconds == 10.0
 
 
+def test_app_owned_logistics_config_helper_reads_compat_section(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch)
+    from apps.logistics.config import LogisticsSection, get_logistics_config
+
+    config = module.AppConfig()
+
+    logistics = get_logistics_config(config)
+
+    assert isinstance(logistics, LogisticsSection)
+    assert logistics.routes_file == config.logistics.routes_file
+    assert logistics.allow_placeholder_routes is config.logistics.allow_placeholder_routes
+
+
+def test_app_owned_patrol_config_helper_reads_compat_section(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = load_config_module(monkeypatch)
+    from apps.patrol.config import PatrolSection, get_patrol_config
+
+    config = module.AppConfig()
+
+    patrol = get_patrol_config(config)
+
+    assert isinstance(patrol, PatrolSection)
+    assert patrol.schedule_enabled is config.patrol.schedule_enabled
+    assert patrol.patrol_interval_seconds == config.patrol.patrol_interval_seconds
+    assert patrol.observation_dwell_seconds == config.patrol.observation_dwell_seconds
+    assert patrol.anomaly_cooldown_seconds == config.patrol.anomaly_cooldown_seconds
+    assert patrol.max_consecutive_failures == config.patrol.max_consecutive_failures
+    assert patrol.alert_on_anomaly is config.patrol.alert_on_anomaly
+
+
+def test_shared_config_marks_app_sections_compatibility_only() -> None:
+    source = (ROOT / "shared" / "core" / "config.py").read_text(encoding="utf-8")
+
+    assert "Deprecated app compatibility section" in source
+    assert "Do not add new app-specific config here" in source
+    assert "future app config registry" in source
+
+
+def test_shared_config_does_not_import_app_packages() -> None:
+    source = (ROOT / "shared" / "core" / "config.py").read_text(encoding="utf-8")
+
+    assert "from apps" not in source
+    assert "import apps" not in source
+
+
 def test_config_example_includes_patrol_and_vision_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     module = load_config_module(monkeypatch, preserve_env=True)
 

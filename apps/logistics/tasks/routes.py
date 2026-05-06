@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from apps.logistics.config import get_logistics_config
 from shared.core.config import get_config
 
 
@@ -41,7 +42,7 @@ class LogisticsRouteStore:
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> "LogisticsRouteStore":
-        resolved_path = Path(path) if path is not None else get_config().logistics_routes_path()
+        resolved_path = Path(path) if path is not None else Path(get_logistics_config(get_config()).routes_file)
         try:
             payload = json.loads(resolved_path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:

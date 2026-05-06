@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from apps.patrol.observation.anomaly_decider import DecisionResult, DetectedObject
+from apps.patrol.config import get_patrol_config
 from shared.core.config import get_config
 from shared.core.database import Database, DatabaseError, get_database, utc_now_iso
 from shared.core.logger import get_logger
@@ -133,8 +134,9 @@ class AnomalyLog:
         cooldown_seconds: float | None = None,
     ) -> None:
         self._database = database or get_database()
+        patrol_config = get_patrol_config(get_config())
         resolved_cooldown = (
-            get_config().patrol.anomaly_cooldown_seconds if cooldown_seconds is None else cooldown_seconds
+            patrol_config.anomaly_cooldown_seconds if cooldown_seconds is None else cooldown_seconds
         )
         if not isinstance(resolved_cooldown, (int, float)) or float(resolved_cooldown) < 0:
             raise AnomalyLogError("cooldown_seconds must be >= 0")

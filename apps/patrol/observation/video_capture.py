@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from apps.patrol.config import get_patrol_config
 from shared.core.config import get_config
 from shared.core.logger import get_logger
 from shared.hardware.video_reader import VideoFrame, VideoReader, get_video_reader
@@ -20,7 +21,8 @@ class VideoCapture:
         sharpness_threshold: float | None = None,
     ) -> None:
         config = get_config()
-        resolved_dwell = config.patrol.observation_dwell_seconds if dwell_seconds is None else dwell_seconds
+        patrol_config = get_patrol_config(config)
+        resolved_dwell = patrol_config.observation_dwell_seconds if dwell_seconds is None else dwell_seconds
         resolved_sharpness = config.vision.sharpness_threshold if sharpness_threshold is None else sharpness_threshold
 
         if not isinstance(resolved_dwell, (int, float)) or float(resolved_dwell) < 0:
