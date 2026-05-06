@@ -20,7 +20,15 @@ from shared.audit import AuditEvent, get_audit_store
 from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
-from shared.observability import Alert, emit_alert, get_alert_router, get_metrics_snapshot, get_robot_health, get_system_health
+from shared.observability import (
+    Alert,
+    build_status_summary,
+    emit_alert,
+    get_alert_router,
+    get_metrics_snapshot,
+    get_robot_health,
+    get_system_health,
+)
 from shared.navigation.route_store import RouteDefinition, RouteNotFoundError, RouteStore, RouteStoreError, Waypoint, get_route_store
 from shared.provisioning import provision_backend
 from shared.provisioning.provision_backend import ProvisioningError
@@ -702,6 +710,13 @@ def create_app() -> FastAPI:
     async def health() -> HealthResponse:
         snapshot = await get_system_health()
         return HealthResponse(**snapshot)
+
+    @application.get(
+        "/status/summary",
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def status_summary() -> dict[str, Any]:
+        return await build_status_summary()
 
     @application.get(
         "/health/robots",

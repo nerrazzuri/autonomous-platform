@@ -6,7 +6,11 @@ import importlib
 from collections.abc import Awaitable, Callable
 
 from apps.patrol.observation.zone_config import get_zone_config
-from apps.patrol.observability import register_patrol_alert_rules, register_patrol_websocket_events
+from apps.patrol.observability import (
+    register_patrol_alert_rules,
+    register_patrol_status_provider,
+    register_patrol_websocket_events,
+)
 from apps.patrol.tasks.patrol_dispatcher import get_patrol_dispatcher
 from apps.patrol.tasks.patrol_scheduler import get_patrol_scheduler
 from apps.patrol.tasks.patrol_watchdog import get_patrol_watchdog
@@ -36,6 +40,7 @@ def _retarget_patrol_singletons(navigator, state_monitor) -> None:
 base_startup.register_singleton_retarget_hook(_retarget_patrol_singletons)
 register_role("patrol")
 register_patrol_alert_rules()
+register_patrol_status_provider()
 register_patrol_websocket_events()
 
 
@@ -53,6 +58,7 @@ async def _run_shutdown_steps(steps: list[tuple[str, Callable[[], Awaitable[None
 async def startup_system() -> None:
     setup_logging()
     register_patrol_alert_rules()
+    register_patrol_status_provider()
     register_patrol_websocket_events()
 
     zone_config = get_zone_config()

@@ -13,22 +13,34 @@ from shared.observability.alerts import (
 from shared.observability.health import get_robot_health, get_system_health
 from shared.observability.metrics import get_metrics_snapshot
 from shared.observability.retention import RetentionPolicy, RetentionReport, apply_retention
+from shared.observability.status import (
+    build_status_summary,
+    clear_status_providers,
+    get_registered_status_providers,
+    register_status_provider,
+    unregister_status_provider,
+)
 
 __all__ = [
     "Alert",
     "AlertRouter",
     "AlertRule",
+    "build_status_summary",
     "clear_alert_rules",
+    "clear_status_providers",
     "emit_alert",
     "get_alert_router",
     "get_registered_alert_rules",
+    "get_registered_status_providers",
     "get_system_health",
     "get_robot_health",
     "get_metrics_snapshot",
     "register_alert_rule",
     "register_platform_alert_rules",
+    "register_status_provider",
     "RetentionPolicy",
     "RetentionReport",
+    "unregister_status_provider",
     "unregister_alert_rule",
     "apply_retention",
 ]
