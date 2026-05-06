@@ -51,6 +51,11 @@ OBSTACLE_AUTO_RESUME_CANCELLED = "obstacle.auto_resume_cancelled"
 OBSTACLE_REPEATED_MANUAL_REQUIRED = "obstacle.repeated_manual_required"
 OBSTACLE_FALSE_POSITIVE_SUSPECTED = "obstacle.false_positive_suspected"
 
+# Battery
+BATTERY_LOW = "battery.low"
+BATTERY_CRITICAL = "battery.critical"
+BATTERY_RECOVERED = "battery.recovered"
+
 # Config / startup
 CONFIG_FILE_MISSING = "config.file_missing"
 CONFIG_PLACEHOLDER_TOKEN = "config.placeholder_token"
@@ -67,6 +72,7 @@ SUGGESTED_ACTIONS: dict[str, str] = {
     LOCALIZATION_POSE_TIMEOUT: "Check localization startup, map availability, and /pose publication.",
     TF_MISSING_ODOM_BASE: "Inspect TF publication between odom and BASE_LINK before navigation.",
     OBSTACLE_REPEATED_MANUAL_REQUIRED: "Ask an operator to inspect the path and clear or classify the repeated obstacle.",
+    BATTERY_CRITICAL: "Charge or dock the robot and confirm battery level recovers before continuing operation.",
     CONFIG_PLACEHOLDER_TOKEN: "Replace placeholder tokens in local configuration before enabling protected controls.",
 }
 
