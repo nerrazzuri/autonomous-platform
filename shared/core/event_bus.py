@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Async in-process event bus for quadruped logistics foundation modules."""
+"""Async in-process event bus for platform modules and app-defined events."""
 
 import asyncio
 import inspect
@@ -43,8 +43,8 @@ class EventName(str, Enum):
     OBSTACLE_DETECTED = "obstacle.detected"
     OBSTACLE_CLEARED = "obstacle.cleared"
 
-    # Deprecated app compatibility aliases. New logistics code must use
-    # apps.logistics.events string constants instead.
+    # Deprecated app compatibility alias. New app code should use app-owned
+    # string constants.
     HUMAN_CONFIRMED_LOAD = "human.confirmed_load"
     HUMAN_CONFIRMED_UNLOAD = "human.confirmed_unload"
 
@@ -60,8 +60,8 @@ class EventName(str, Enum):
     ESTOP_TRIGGERED = "estop.triggered"
     ESTOP_RELEASED = "estop.released"
 
-    # Deprecated app compatibility aliases. New patrol code must use
-    # apps.patrol.events string constants instead.
+    # Deprecated app compatibility alias. New app code should use app-owned
+    # string constants.
     PATROL_CYCLE_STARTED = "patrol.cycle.started"
     PATROL_CYCLE_COMPLETED = "patrol.cycle.completed"
     PATROL_CYCLE_FAILED = "patrol.cycle.failed"

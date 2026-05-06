@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Centralized structured logging for the quadruped logistics application."""
+"""Centralized structured logging for the autonomous platform runtime."""
 
 import json
 import logging
@@ -110,7 +110,7 @@ def _build_formatter(json_output: bool) -> logging.Formatter:
 
 
 def setup_logging(config: AppConfig | None = None) -> None:
-    """Configure application logging using MOD-00 config and owned handlers only."""
+    """Configure platform logging using config-owned handlers only."""
 
     global _LOGGING_CONFIGURED
 
@@ -146,7 +146,7 @@ def setup_logging(config: AppConfig | None = None) -> None:
 
 
 def get_logger(module_name: str) -> logging.Logger:
-    """Return a logger configured by the shared application logging setup."""
+    """Return a logger configured by the shared platform logging setup."""
 
     if not _LOGGING_CONFIGURED:
         setup_logging()
@@ -157,7 +157,7 @@ def get_logger(module_name: str) -> logging.Logger:
 
 
 class JsonLogFormatter(logging.Formatter):
-    """Format quadruped log records as one JSON object per line."""
+    """Format platform log records as one JSON object per line."""
 
     def format(self, record: logging.LogRecord) -> str:
         runtime_context = _get_runtime_context()

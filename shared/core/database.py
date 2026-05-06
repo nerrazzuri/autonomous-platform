@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Async SQLite persistence layer for quadruped logistics foundation modules."""
+"""Async SQLite persistence layer for autonomous platform runtime state."""
 
 import json
 from dataclasses import asdict, dataclass

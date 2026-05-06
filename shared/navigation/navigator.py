@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Simple waypoint-following navigator for Phase 1 quadruped logistics."""
+"""Waypoint route navigation through platform heartbeat and safety layers."""
 
 import asyncio
 import math
