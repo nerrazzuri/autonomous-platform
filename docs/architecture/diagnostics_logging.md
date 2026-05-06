@@ -185,6 +185,41 @@ Structured records include:
 
 Details and extra fields are passed through the OBS-1 redaction helper before writing. Repeated configuration closes old router-owned handlers before installing new ones, and `shutdown_diagnostics_logging()` is safe to call multiple times. Rotation uses Python `RotatingFileHandler` with configurable byte and backup limits.
 
+## OBS-3 Diagnostic Reporter
+
+OBS-3 adds `shared.diagnostics.reporter.DiagnosticReporter`, a generic publishing mechanism for diagnostic events. The reporter creates a `DiagnosticEvent`, stores it in a `DiagnosticEventStore`, and can log the event through the OBS-2 logging router. It treats error codes as opaque strings and does not inspect app-specific prefixes such as `task.*`, `route.*`, or `hmi.*`.
+
+Shared/platform usage:
+
+```python
+from shared.diagnostics import error_codes, get_diagnostic_reporter
+
+reporter = get_diagnostic_reporter("sdk_adapter")
+reporter.error(
+    event="sdk.connect_failed",
+    message="Failed to connect to quadruped SDK.",
+    error_code=error_codes.SDK_CONNECT_FAILED,
+    robot_id="robot_01",
+    details={"robot_ip": "192.168.1.10", "token": "secret"},
+)
+```
+
+App-specific usage stays app-owned:
+
+```python
+from apps.logistics.diagnostics import error_codes as logistics_error_codes
+from shared.diagnostics import get_diagnostic_reporter
+
+reporter = get_diagnostic_reporter("logistics.dispatcher")
+reporter.warning(
+    event="dispatcher.no_available_robot",
+    message="No available robot for logistics dispatch.",
+    error_code=logistics_error_codes.DISPATCHER_NO_AVAILABLE_ROBOT,
+)
+```
+
+The logistics code above imports logistics error codes from `apps.logistics.diagnostics`; those codes are not defined in `shared.diagnostics`. By default, reporter failures are contained and return `None` so diagnostics publication does not interrupt runtime behavior. Tests or strict development paths may enable `raise_on_error=True`.
+
 ## Scope Limits
 
 OBS-1 defines the diagnostic event model and in-memory diagnostic ring buffer.

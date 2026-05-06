@@ -10,17 +10,21 @@ from shared.diagnostics.logging_router import (
     get_diagnostic_logger,
     shutdown_diagnostics_logging,
 )
+from shared.diagnostics.reporter import DiagnosticReporter, get_diagnostic_reporter, reset_diagnostic_reporter
 from shared.diagnostics.store import DiagnosticEventStore, get_diagnostic_store, reset_diagnostic_store
 
 __all__ = [
     "DiagnosticEvent",
     "DiagnosticEventStore",
+    "DiagnosticReporter",
     "DiagnosticSeverity",
     "configure_diagnostics_logging",
     "error_codes",
     "get_diagnostic_logger",
+    "get_diagnostic_reporter",
     "get_diagnostic_store",
     "get_suggested_action",
+    "reset_diagnostic_reporter",
     "reset_diagnostic_store",
     "shutdown_diagnostics_logging",
 ]
