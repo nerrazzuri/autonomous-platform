@@ -236,3 +236,7 @@ These phases do not implement:
 - Production readiness, certification, or field accuracy guarantees.
 
 Future agents must treat those items as separate phases with their own acceptance checks.
+
+OBS-4 adds a separate app-agnostic status summary endpoint. See
+`docs/architecture/status_summary.md` for the status provider registry and REST
+contract.

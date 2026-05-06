@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from apps.logistics import events as logistics_events
-from apps.logistics.observability import register_logistics_alert_rules, register_logistics_websocket_events
+from apps.logistics.observability import (
+    register_logistics_alert_rules,
+    register_logistics_status_provider,
+    register_logistics_websocket_events,
+)
 from apps.logistics.tasks.battery_manager import get_battery_manager
 from apps.logistics.tasks.dispatcher import get_dispatcher
 from apps.logistics.tasks.watchdog import get_watchdog
@@ -53,6 +57,7 @@ def _retarget_logistics_singletons(navigator, state_monitor) -> None:
 base_startup.register_singleton_retarget_hook(_retarget_logistics_singletons)
 register_role("logistics")
 register_logistics_alert_rules()
+register_logistics_status_provider()
 register_logistics_websocket_events()
 
 
@@ -73,6 +78,7 @@ async def startup_system() -> None:
     battery_manager = get_battery_manager()
     watchdog = get_watchdog()
     register_logistics_alert_rules()
+    register_logistics_status_provider()
     register_logistics_websocket_events()
 
     await base_startup.startup_system()

@@ -26,6 +26,7 @@ from apps.patrol import events as patrol_events
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.navigation.route_store import RouteDefinition, RouteNotFoundError, RouteStore, RouteStoreError, Waypoint, get_route_store
+from shared.observability import build_status_summary
 from shared.quadruped.robot_registry import RobotNotFoundError, get_robot_registry
 from shared.quadruped.sdk_adapter import SDKAdapter, get_sdk_adapter
 from shared.quadruped.state_monitor import QuadrupedState
@@ -413,6 +414,13 @@ def create_app() -> FastAPI:
     @application.get("/health", response_model=HealthResponse)
     async def health() -> HealthResponse:
         return HealthResponse(status="ok", service="patrol")
+
+    @application.get(
+        "/status/summary",
+        dependencies=[Depends(require_supervisor)],
+    )
+    async def status_summary() -> dict[str, Any]:
+        return await build_status_summary()
 
     @application.get(
         "/patrol/status",
