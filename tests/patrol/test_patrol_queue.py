@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from apps.patrol import events as patrol_events
+
 
 @pytest_asyncio.fixture
 async def queue_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -254,10 +256,10 @@ async def test_events_published_on_transitions(queue_env) -> None:
     await event_bus.wait_until_idle(timeout=0.5)
 
     assert received == [
-        EventName.PATROL_CYCLE_STARTED,
-        EventName.PATROL_SUSPENDED,
-        EventName.PATROL_RESUMED,
-        EventName.PATROL_CYCLE_COMPLETED,
-        EventName.PATROL_CYCLE_STARTED,
-        EventName.PATROL_CYCLE_FAILED,
+        patrol_events.PATROL_CYCLE_STARTED,
+        patrol_events.PATROL_SUSPENDED,
+        patrol_events.PATROL_RESUMED,
+        patrol_events.PATROL_CYCLE_COMPLETED,
+        patrol_events.PATROL_CYCLE_STARTED,
+        patrol_events.PATROL_CYCLE_FAILED,
     ]

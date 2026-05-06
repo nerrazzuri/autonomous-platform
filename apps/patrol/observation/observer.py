@@ -14,6 +14,7 @@ from apps.patrol.observation.video_capture import VideoCapture, get_video_captur
 from apps.patrol.observation.vision_analyser import VisionAnalyser, get_vision_analyser
 from apps.patrol.observation.zone_config import ZoneConfig, ZoneConfigError, ZoneNotFoundError, get_zone_config
 from shared.core.database import utc_now_iso
+from apps.patrol import events as patrol_events
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 
@@ -180,14 +181,14 @@ class Observer:
         payload["cycle_id"] = normalized_cycle_id
         payload["task_id"] = task_id
         self._publish_event(
-            EventName.PATROL_WAYPOINT_OBSERVED,
+            patrol_events.PATROL_WAYPOINT_OBSERVED,
             payload,
             task_id=task_id,
         )
 
         if anomaly_id is not None:
             self._publish_event(
-                EventName.PATROL_ANOMALY_DETECTED,
+                patrol_events.PATROL_ANOMALY_DETECTED,
                 {
                     "anomaly_id": anomaly_id,
                     "waypoint_name": normalized_waypoint_name,
@@ -202,7 +203,7 @@ class Observer:
         return summary
 
     @staticmethod
-    def _publish_event(event_name: EventName, payload: dict[str, Any], task_id: str | None = None) -> None:
+    def _publish_event(event_name: EventName | str, payload: dict[str, Any], task_id: str | None = None) -> None:
         try:
             get_event_bus().publish_nowait(event_name, payload, source="patrol.observer", task_id=task_id)
         except Exception:

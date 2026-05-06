@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from apps.logistics import events as logistics_events
+
 
 TEST_OPERATOR_TOKEN = "test-operator-token"
 TEST_QA_TOKEN = "test-qa-token"
@@ -218,7 +220,7 @@ def test_hmi_confirm_load_success_publishes_event(hmi_client) -> None:
     assert body["task_id"] == "t1"
     assert body["display"]["page"] == "in_transit"
     assert len(event_bus.published) == 1
-    assert event_bus.published[0]["event_name"] == "human.confirmed_load"
+    assert event_bus.published[0]["event_name"] == logistics_events.HUMAN_CONFIRMED_LOAD
     assert event_bus.published[0]["task_id"] == "t1"
     assert event_bus.published[0]["payload"]["robot_id"] == "robot-1"
     assert event_bus.published[0]["payload"]["screen_id"] == "screen-front"
@@ -284,7 +286,7 @@ def test_hmi_confirm_unload_success_publishes_event(hmi_client) -> None:
     assert body["task_id"] == "t2"
     assert body["display"]["page"] == "idle"
     assert len(event_bus.published) == 1
-    assert event_bus.published[0]["event_name"] == "human.confirmed_unload"
+    assert event_bus.published[0]["event_name"] == logistics_events.HUMAN_CONFIRMED_UNLOAD
     assert event_bus.published[0]["payload"]["robot_id"] == "robot-1"
     assert event_bus.published[0]["payload"]["screen_id"] == "screen-front"
 

@@ -239,7 +239,7 @@ class AlertManager:
 
     def _send_email_sync(self, alert: AlertMessage) -> None:
         alerts_config = get_config().alerts
-        subject = f"[Sumitomo Quadruped] {alert.severity.upper()} alert: {alert.reason}"
+        subject = f"[Autonomous Platform] {alert.severity.upper()} alert: {alert.reason}"
         body_lines = [
             f"severity: {alert.severity}",
             f"reason: {alert.reason}",

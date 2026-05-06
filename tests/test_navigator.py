@@ -11,6 +11,7 @@ import pytest
 import pytest_asyncio
 
 from shared.navigation.navigator import _CONTROL_LOOP_SECONDS
+from apps.logistics import events as logistics_events
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -238,6 +239,7 @@ async def test_execute_route_rejects_concurrent_navigation(navigator_env) -> Non
         state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
         heartbeat=FakeHeartbeat(),
         waypoint_tolerance_m=0.1,
+        hold_release_event_names=(logistics_events.HUMAN_CONFIRMED_LOAD,),
     )
     running = asyncio.create_task(navigator.execute_route("LINE_A", "QA"))
     await asyncio.sleep(0.02)
@@ -382,6 +384,7 @@ async def test_waypoint_hold_waits_for_confirmation_event(navigator_env) -> None
         state_monitor=FakeStateMonitor([make_state(0.0, 0.0)]),
         heartbeat=FakeHeartbeat(),
         waypoint_tolerance_m=0.1,
+        hold_release_event_names=(logistics_events.HUMAN_CONFIRMED_LOAD,),
     )
 
     task = asyncio.create_task(navigator.execute_route("LINE_A", "QA", task_id="task-hold"))
@@ -389,9 +392,7 @@ async def test_waypoint_hold_waits_for_confirmation_event(navigator_env) -> None
 
     assert task.done() is False
 
-    from core.event_bus import EventName
-
-    await event_bus.publish(EventName.HUMAN_CONFIRMED_LOAD, {"task_id": "task-hold"})
+    await event_bus.publish(logistics_events.HUMAN_CONFIRMED_LOAD, {"task_id": "task-hold"})
     await event_bus.wait_until_idle(timeout=1.0)
     result = await asyncio.wait_for(task, timeout=1.0)
 
@@ -408,20 +409,19 @@ async def test_robot_scoped_human_confirmation_ignores_other_robot(navigator_env
         heartbeat=FakeHeartbeat(),
         waypoint_tolerance_m=0.1,
         robot_id="robot-1",
+        hold_release_event_names=(logistics_events.HUMAN_CONFIRMED_LOAD,),
     )
 
     task = asyncio.create_task(navigator.execute_route("LINE_A", "QA", task_id="task-hold"))
     await asyncio.sleep(0.05)
 
-    from core.event_bus import EventName
-
-    await event_bus.publish(EventName.HUMAN_CONFIRMED_LOAD, {"task_id": "task-hold", "robot_id": "robot-2"})
+    await event_bus.publish(logistics_events.HUMAN_CONFIRMED_LOAD, {"task_id": "task-hold", "robot_id": "robot-2"})
     await event_bus.wait_until_idle(timeout=1.0)
     await asyncio.sleep(0.05)
 
     assert task.done() is False
 
-    await event_bus.publish(EventName.HUMAN_CONFIRMED_LOAD, {"task_id": "task-hold", "robot_id": "robot-1"})
+    await event_bus.publish(logistics_events.HUMAN_CONFIRMED_LOAD, {"task_id": "task-hold", "robot_id": "robot-1"})
     await event_bus.wait_until_idle(timeout=1.0)
     result = await asyncio.wait_for(task, timeout=1.0)
 

@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from apps.patrol import events as patrol_events
+
 
 def make_zone():
     from apps.patrol.observation.zone_config import ZoneDefinition
@@ -162,7 +164,7 @@ async def test_observe_stub_pipeline_publishes_waypoint_observed(event_bus_env) 
     async def callback(event):
         events.append(event)
 
-    event_bus.subscribe("patrol.waypoint.observed", callback, subscriber_name="test")
+    event_bus.subscribe(patrol_events.PATROL_WAYPOINT_OBSERVED, callback, subscriber_name="test")
 
     observer = observer_module.Observer(
         zone_config=StubZoneConfig(zone=make_zone()),
@@ -196,7 +198,7 @@ async def test_observe_records_and_publishes_anomaly_when_alert_required(event_b
     async def callback(event):
         anomaly_events.append(event)
 
-    event_bus.subscribe("patrol.anomaly.detected", callback, subscriber_name="test")
+    event_bus.subscribe(patrol_events.PATROL_ANOMALY_DETECTED, callback, subscriber_name="test")
 
     observer = observer_module.Observer(
         zone_config=StubZoneConfig(zone=make_zone()),

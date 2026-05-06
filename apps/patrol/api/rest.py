@@ -22,6 +22,7 @@ from shared.api.alerts import get_alert_manager
 from shared.api.auth import require_supervisor
 from shared.api.ws_broker import get_ws_broker, websocket_endpoint
 from shared.core.config import get_config
+from apps.patrol import events as patrol_events
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.navigation.route_store import RouteDefinition, RouteNotFoundError, RouteStore, RouteStoreError, Waypoint, get_route_store
@@ -549,7 +550,7 @@ def create_app() -> FastAPI:
             await scheduler.suspend(request.reason)
             await dispatcher.suspend(request.reason)
             await get_event_bus().publish(
-                EventName.PATROL_SUSPENDED,
+                patrol_events.PATROL_SUSPENDED,
                 {"reason": request.reason},
                 source=EVENT_SOURCE,
             )
@@ -571,7 +572,7 @@ def create_app() -> FastAPI:
             await scheduler.resume("manual resume")
             await dispatcher.resume("manual resume")
             await get_event_bus().publish(
-                EventName.PATROL_RESUMED,
+                patrol_events.PATROL_RESUMED,
                 {"reason": "manual resume"},
                 source=EVENT_SOURCE,
             )

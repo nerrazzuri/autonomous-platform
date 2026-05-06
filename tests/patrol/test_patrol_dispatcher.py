@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from apps.patrol import events as patrol_events
+
 
 class FakeCycle:
     def __init__(
@@ -456,7 +458,7 @@ async def test_navigation_failure_marks_cycle_failed(dispatcher_module) -> None:
     assert processed is True
     assert queue.failed_calls == [("cycle-1", "obstacle timeout")]
     assert state.consecutive_failures == 1
-    assert any(event.name == dispatcher_module.EventName.PATROL_CYCLE_FAILED for event in event_bus.published)
+    assert any(event.name == patrol_events.PATROL_CYCLE_FAILED for event in event_bus.published)
 
 
 @pytest.mark.asyncio
@@ -481,7 +483,7 @@ async def test_consecutive_failures_trigger_suspension(dispatcher_module, monkey
 
     assert state.suspended is True
     assert state.consecutive_failures == 2
-    assert any(event.name == dispatcher_module.EventName.PATROL_SUSPENDED for event in event_bus.published)
+    assert any(event.name == patrol_events.PATROL_SUSPENDED for event in event_bus.published)
 
 
 @pytest.mark.asyncio
@@ -497,8 +499,8 @@ async def test_suspend_and_resume_methods(dispatcher_module) -> None:
 
     assert state.suspended is False
     assert [event.name for event in event_bus.published] == [
-        dispatcher_module.EventName.PATROL_SUSPENDED,
-        dispatcher_module.EventName.PATROL_RESUMED,
+        patrol_events.PATROL_SUSPENDED,
+        patrol_events.PATROL_RESUMED,
     ]
 
 
@@ -534,8 +536,8 @@ async def test_start_and_stop_are_idempotent(dispatcher_module) -> None:
     await dispatcher.start()
 
     assert dispatcher.is_running() is True
-    assert event_bus.subscriber_count(dispatcher_module.EventName.PATROL_SUSPENDED) == 1
-    assert event_bus.subscriber_count(dispatcher_module.EventName.PATROL_RESUMED) == 1
+    assert event_bus.subscriber_count(patrol_events.PATROL_SUSPENDED) == 1
+    assert event_bus.subscriber_count(patrol_events.PATROL_RESUMED) == 1
     assert event_bus.subscriber_count(dispatcher_module.EventName.ESTOP_TRIGGERED) == 1
     assert event_bus.subscriber_count(dispatcher_module.EventName.QUADRUPED_ARRIVED_AT_WAYPOINT) == 1
     assert event_bus.subscriber_count(dispatcher_module.EventName.QUADRUPED_IDLE) == 1
@@ -544,8 +546,8 @@ async def test_start_and_stop_are_idempotent(dispatcher_module) -> None:
     await dispatcher.stop()
 
     assert dispatcher.is_running() is False
-    assert event_bus.subscriber_count(dispatcher_module.EventName.PATROL_SUSPENDED) == 0
-    assert event_bus.subscriber_count(dispatcher_module.EventName.PATROL_RESUMED) == 0
+    assert event_bus.subscriber_count(patrol_events.PATROL_SUSPENDED) == 0
+    assert event_bus.subscriber_count(patrol_events.PATROL_RESUMED) == 0
     assert event_bus.subscriber_count(dispatcher_module.EventName.ESTOP_TRIGGERED) == 0
     assert event_bus.subscriber_count(dispatcher_module.EventName.QUADRUPED_ARRIVED_AT_WAYPOINT) == 0
     assert event_bus.subscriber_count(dispatcher_module.EventName.QUADRUPED_IDLE) == 0

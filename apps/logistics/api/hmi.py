@@ -11,6 +11,7 @@ from shared.api.auth import get_auth_context, require_operator
 from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
+from apps.logistics import events as logistics_events
 from apps.logistics.tasks.dispatcher import Dispatcher, get_dispatcher
 from apps.logistics.tasks.queue import TaskQueue, TaskQueueError, get_task_queue
 from apps.logistics.tasks.routes import LogisticsRouteStore, RouteValidationError, get_logistics_route_store
@@ -100,7 +101,7 @@ async def handle_hmi_action(
                 detail=f"Task {tid!r} is in status {task.status!r}, expected 'awaiting_load'",
             )
         await get_event_bus().publish(
-            EventName.HUMAN_CONFIRMED_LOAD,
+            logistics_events.HUMAN_CONFIRMED_LOAD,
             payload={
                 "task_id": tid,
                 "robot_id": request.robot_id,
@@ -133,7 +134,7 @@ async def handle_hmi_action(
                 detail=f"Task {tid!r} is in status {task.status!r}, expected 'awaiting_unload'",
             )
         await get_event_bus().publish(
-            EventName.HUMAN_CONFIRMED_UNLOAD,
+            logistics_events.HUMAN_CONFIRMED_UNLOAD,
             payload={
                 "task_id": tid,
                 "robot_id": request.robot_id,

@@ -43,11 +43,13 @@ class EventName(str, Enum):
     OBSTACLE_DETECTED = "obstacle.detected"
     OBSTACLE_CLEARED = "obstacle.cleared"
 
+    # Deprecated app compatibility aliases. New logistics code must use
+    # apps.logistics.events string constants instead.
     HUMAN_CONFIRMED_LOAD = "human.confirmed_load"
     HUMAN_CONFIRMED_UNLOAD = "human.confirmed_unload"
 
-    # App-specific events retained here for backward compatibility.
-    # Future apps should use plain string event names instead of adding members here.
+    # Shared task abstraction events retained here for backward compatibility.
+    # Future app-specific workflow events should use plain strings in app packages.
     TASK_SUBMITTED = "task.submitted"
     TASK_DISPATCHED = "task.dispatched"
     TASK_STATUS_CHANGED = "task.status_changed"
@@ -58,8 +60,8 @@ class EventName(str, Enum):
     ESTOP_TRIGGERED = "estop.triggered"
     ESTOP_RELEASED = "estop.released"
 
-    # App-specific events retained here for backward compatibility.
-    # Future apps should use plain string event names instead of adding members here.
+    # Deprecated app compatibility aliases. New patrol code must use
+    # apps.patrol.events string constants instead.
     PATROL_CYCLE_STARTED = "patrol.cycle.started"
     PATROL_CYCLE_COMPLETED = "patrol.cycle.completed"
     PATROL_CYCLE_FAILED = "patrol.cycle.failed"

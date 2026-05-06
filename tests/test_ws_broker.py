@@ -342,23 +342,25 @@ async def test_multiple_filtered_clients_receive_only_their_robot_events(ws_modu
 
 def test_patrol_events_are_relevant_to_websocket_broker(ws_module) -> None:
     module, _event_bus = ws_module
+    from apps.patrol import events as patrol_events
 
     module.clear_websocket_forwarding_events()
     module.register_platform_websocket_events()
 
     assert module.EventName.QUADRUPED_TELEMETRY in module.get_registered_websocket_events()
-    assert module.EventName.PATROL_CYCLE_STARTED not in module.get_registered_websocket_events()
-    assert module.EventName.PATROL_CYCLE_COMPLETED not in module.get_registered_websocket_events()
-    assert module.EventName.PATROL_CYCLE_FAILED not in module.get_registered_websocket_events()
-    assert module.EventName.PATROL_WAYPOINT_OBSERVED not in module.get_registered_websocket_events()
-    assert module.EventName.PATROL_ANOMALY_DETECTED not in module.get_registered_websocket_events()
-    assert module.EventName.PATROL_ANOMALY_CLEARED not in module.get_registered_websocket_events()
-    assert module.EventName.PATROL_SUSPENDED not in module.get_registered_websocket_events()
-    assert module.EventName.PATROL_RESUMED not in module.get_registered_websocket_events()
+    assert patrol_events.PATROL_CYCLE_STARTED not in module.get_registered_websocket_events()
+    assert patrol_events.PATROL_CYCLE_COMPLETED not in module.get_registered_websocket_events()
+    assert patrol_events.PATROL_CYCLE_FAILED not in module.get_registered_websocket_events()
+    assert patrol_events.PATROL_WAYPOINT_OBSERVED not in module.get_registered_websocket_events()
+    assert patrol_events.PATROL_ANOMALY_DETECTED not in module.get_registered_websocket_events()
+    assert patrol_events.PATROL_ANOMALY_CLEARED not in module.get_registered_websocket_events()
+    assert patrol_events.PATROL_SUSPENDED not in module.get_registered_websocket_events()
+    assert patrol_events.PATROL_RESUMED not in module.get_registered_websocket_events()
 
 
 def test_logistics_websocket_registration_lives_in_app_layer(ws_module) -> None:
     module, _event_bus = ws_module
+    from apps.patrol import events as patrol_events
     from apps.logistics.observability.websocket import register_logistics_websocket_events
 
     module.clear_websocket_forwarding_events()
@@ -368,7 +370,7 @@ def test_logistics_websocket_registration_lives_in_app_layer(ws_module) -> None:
 
     assert module.EventName.TASK_STATUS_CHANGED in registered_events
     assert module.EventName.TASK_FAILED in registered_events
-    assert module.EventName.PATROL_CYCLE_FAILED not in registered_events
+    assert patrol_events.PATROL_CYCLE_FAILED not in registered_events
 
     module.clear_websocket_forwarding_events()
     module.register_platform_websocket_events()
@@ -376,6 +378,7 @@ def test_logistics_websocket_registration_lives_in_app_layer(ws_module) -> None:
 
 def test_patrol_websocket_registration_lives_in_app_layer(ws_module) -> None:
     module, _event_bus = ws_module
+    from apps.patrol import events as patrol_events
     from apps.patrol.observability.websocket import register_patrol_websocket_events
 
     module.clear_websocket_forwarding_events()
@@ -383,9 +386,9 @@ def test_patrol_websocket_registration_lives_in_app_layer(ws_module) -> None:
 
     registered_events = module.get_registered_websocket_events()
 
-    assert module.EventName.PATROL_CYCLE_STARTED in registered_events
-    assert module.EventName.PATROL_CYCLE_FAILED in registered_events
-    assert module.EventName.PATROL_WAYPOINT_OBSERVED in registered_events
+    assert patrol_events.PATROL_CYCLE_STARTED in registered_events
+    assert patrol_events.PATROL_CYCLE_FAILED in registered_events
+    assert patrol_events.PATROL_WAYPOINT_OBSERVED in registered_events
     assert module.EventName.TASK_FAILED not in registered_events
 
     module.clear_websocket_forwarding_events()

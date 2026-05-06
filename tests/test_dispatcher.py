@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from apps.logistics import events as logistics_events
+
 
 def make_state(*, connection_ok: bool = True):
     from quadruped.sdk_adapter import QuadrupedMode
@@ -541,7 +543,7 @@ async def test_human_confirm_load_marks_in_transit(dispatcher_env) -> None:
         task_id=task.id,
     )
     await event_bus.wait_until_idle(timeout=1.0)
-    await event_bus.publish("human.confirmed_load", {"task_id": task.id}, task_id=task.id)
+    await event_bus.publish(logistics_events.HUMAN_CONFIRMED_LOAD, {"task_id": task.id}, task_id=task.id)
     await event_bus.wait_until_idle(timeout=1.0)
 
     assert queue.tasks[task.id].status == "in_transit"
@@ -571,7 +573,7 @@ async def test_human_confirm_unload_marks_completed(dispatcher_env) -> None:
         task_id=task.id,
     )
     await event_bus.wait_until_idle(timeout=1.0)
-    await event_bus.publish("human.confirmed_load", {"task_id": task.id}, task_id=task.id)
+    await event_bus.publish(logistics_events.HUMAN_CONFIRMED_LOAD, {"task_id": task.id}, task_id=task.id)
     await event_bus.wait_until_idle(timeout=1.0)
     await event_bus.publish(
         "quadruped.arrived_at_waypoint",
@@ -579,7 +581,7 @@ async def test_human_confirm_unload_marks_completed(dispatcher_env) -> None:
         task_id=task.id,
     )
     await event_bus.wait_until_idle(timeout=1.0)
-    await event_bus.publish("human.confirmed_unload", {"task_id": task.id}, task_id=task.id)
+    await event_bus.publish(logistics_events.HUMAN_CONFIRMED_UNLOAD, {"task_id": task.id}, task_id=task.id)
     await event_bus.wait_until_idle(timeout=1.0)
 
     assert queue.tasks[task.id].status == "completed"

@@ -5,6 +5,7 @@ import importlib
 from dataclasses import dataclass
 
 from shared.core.config import get_config
+from apps.patrol import events as patrol_events
 from shared.core.event_bus import EventBus, EventName, get_event_bus
 from shared.core.logger import get_logger
 
@@ -134,7 +135,7 @@ class PatrolScheduler:
             cycle = await self._patrol_queue.submit_cycle(route_id=self._default_route_id, triggered_by="schedule")
             await self._set_result("scheduled", last_cycle_id=cycle.cycle_id)
             self._publish_event(
-                EventName.PATROL_CYCLE_STARTED,
+                patrol_events.PATROL_CYCLE_STARTED,
                 {
                     "cycle_id": cycle.cycle_id,
                     "route_id": cycle.route_id,
@@ -161,7 +162,7 @@ class PatrolScheduler:
         if state.suspended:
             return
         await self._set_state(suspended=True)
-        self._publish_event(EventName.PATROL_SUSPENDED, {"reason": reason.strip()})
+        self._publish_event(patrol_events.PATROL_SUSPENDED, {"reason": reason.strip()})
 
     async def resume(self, reason: str = "resumed") -> None:
         if not isinstance(reason, str) or not reason.strip():
@@ -170,7 +171,7 @@ class PatrolScheduler:
         if not state.suspended:
             return
         await self._set_state(suspended=False)
-        self._publish_event(EventName.PATROL_RESUMED, {"reason": reason.strip()})
+        self._publish_event(patrol_events.PATROL_RESUMED, {"reason": reason.strip()})
 
     def is_running(self) -> bool:
         return self._state.running
@@ -204,8 +205,8 @@ class PatrolScheduler:
         self._subscription_ids = [
             self._event_bus.subscribe(EventName.BATTERY_CRITICAL, self._handle_battery_critical, subscriber_name="patrol-scheduler"),
             self._event_bus.subscribe(EventName.BATTERY_RECHARGED, self._handle_battery_recharged, subscriber_name="patrol-scheduler"),
-            self._event_bus.subscribe(EventName.PATROL_SUSPENDED, self._handle_patrol_suspended, subscriber_name="patrol-scheduler"),
-            self._event_bus.subscribe(EventName.PATROL_RESUMED, self._handle_patrol_resumed, subscriber_name="patrol-scheduler"),
+            self._event_bus.subscribe(patrol_events.PATROL_SUSPENDED, self._handle_patrol_suspended, subscriber_name="patrol-scheduler"),
+            self._event_bus.subscribe(patrol_events.PATROL_RESUMED, self._handle_patrol_resumed, subscriber_name="patrol-scheduler"),
         ]
 
     def _unsubscribe_all(self) -> None:
@@ -267,7 +268,7 @@ class PatrolScheduler:
                 loop_iteration=self._state.loop_iteration + 1,
             )
 
-    def _publish_event(self, event_name: EventName, payload: dict[str, object], task_id: str | None = None) -> None:
+    def _publish_event(self, event_name: EventName | str, payload: dict[str, object], task_id: str | None = None) -> None:
         try:
             self._event_bus.publish_nowait(event_name, payload, source=__name__, task_id=task_id)
         except Exception:

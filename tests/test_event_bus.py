@@ -275,16 +275,23 @@ async def test_event_contains_event_id_timestamp_payload_source_task_id_correlat
 
 
 def test_patrol_event_names_are_available() -> None:
-    from core.event_bus import EventName
+    from apps.patrol import events
 
-    assert EventName.PATROL_CYCLE_STARTED.value == "patrol.cycle.started"
-    assert EventName.PATROL_CYCLE_COMPLETED.value == "patrol.cycle.completed"
-    assert EventName.PATROL_CYCLE_FAILED.value == "patrol.cycle.failed"
-    assert EventName.PATROL_WAYPOINT_OBSERVED.value == "patrol.waypoint.observed"
-    assert EventName.PATROL_ANOMALY_DETECTED.value == "patrol.anomaly.detected"
-    assert EventName.PATROL_ANOMALY_CLEARED.value == "patrol.anomaly.cleared"
-    assert EventName.PATROL_SUSPENDED.value == "patrol.suspended"
-    assert EventName.PATROL_RESUMED.value == "patrol.resumed"
+    assert events.PATROL_CYCLE_STARTED == "patrol.cycle_started"
+    assert events.PATROL_CYCLE_COMPLETED == "patrol.cycle_completed"
+    assert events.PATROL_CYCLE_FAILED == "patrol.cycle_failed"
+    assert events.PATROL_WAYPOINT_OBSERVED == "patrol.waypoint_observed"
+    assert events.PATROL_ANOMALY_DETECTED == "patrol.anomaly_detected"
+    assert events.PATROL_ANOMALY_CLEARED == "patrol.anomaly_cleared"
+    assert events.PATROL_SUSPENDED == "patrol.suspended"
+    assert events.PATROL_RESUMED == "patrol.resumed"
+
+
+def test_logistics_event_names_are_app_owned() -> None:
+    from apps.logistics import events
+
+    assert events.HUMAN_CONFIRMED_LOAD == "logistics.human_confirmed_load"
+    assert events.HUMAN_CONFIRMED_UNLOAD == "logistics.human_confirmed_unload"
 
 
 @pytest.mark.asyncio
@@ -321,6 +328,21 @@ async def test_enum_subscription_matches_string_publish(bus) -> None:
     assert received == [EventName.SYSTEM_STARTED]
 
 
+@pytest.mark.asyncio
+async def test_app_defined_plain_string_event_publish_subscribe(bus) -> None:
+    received = []
+
+    def callback(event):
+        received.append((event.name, event.payload))
+
+    await bus.start()
+    bus.subscribe("inspection.checkpoint_completed", callback)
+    await bus.publish("inspection.checkpoint_completed", {"checkpoint_id": "cp-1"})
+    await bus.wait_until_idle(timeout=0.5)
+
+    assert received == [("inspection.checkpoint_completed", {"checkpoint_id": "cp-1"})]
+
+
 def test_event_name_members_are_retained() -> None:
     from core.event_bus import EventName
 
@@ -329,11 +351,32 @@ def test_event_name_members_are_retained() -> None:
         "SYSTEM_STOPPING",
         "TASK_SUBMITTED",
         "TASK_COMPLETED",
-        "PATROL_CYCLE_STARTED",
-        "PATROL_RESUMED",
     }
 
     assert expected_members.issubset(EventName.__members__)
+
+
+def test_shared_code_does_not_reference_deprecated_app_event_aliases() -> None:
+    deprecated_references = (
+        "EventName." + "HUMAN_CONFIRMED_LOAD",
+        "EventName." + "HUMAN_CONFIRMED_UNLOAD",
+        "EventName." + "PATROL_CYCLE_STARTED",
+        "EventName." + "PATROL_WAYPOINT_OBSERVED",
+        "EventName." + "PATROL_CYCLE_COMPLETED",
+        "EventName." + "PATROL_CYCLE_FAILED",
+    )
+    shared_root = ROOT / "shared"
+    offenders: list[str] = []
+
+    for path in shared_root.rglob("*.py"):
+        if path.relative_to(ROOT).as_posix() == "shared/core/event_bus.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for reference in deprecated_references:
+            if reference in text:
+                offenders.append(f"{path.relative_to(ROOT)}:{reference}")
+
+    assert offenders == []
 
 
 @pytest.mark.asyncio

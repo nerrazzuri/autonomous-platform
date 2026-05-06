@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from apps.patrol import events as patrol_events
+
 
 class FakePatrolQueue:
     def __init__(self) -> None:
@@ -104,7 +106,7 @@ async def test_cycle_completed_event_updates_timestamp(watchdog_module) -> None:
 
     await watchdog.start()
     try:
-        await event_bus.publish(watchdog_module.EventName.PATROL_CYCLE_COMPLETED, {"cycle_id": "cycle-1"})
+        await event_bus.publish(patrol_events.PATROL_CYCLE_COMPLETED, {"cycle_id": "cycle-1"})
     finally:
         await watchdog.stop()
 
@@ -170,9 +172,9 @@ async def test_patrol_resumed_clears_suspended(watchdog_module) -> None:
 
     await watchdog.start()
     try:
-        await event_bus.publish(watchdog_module.EventName.PATROL_SUSPENDED, {})
+        await event_bus.publish(patrol_events.PATROL_SUSPENDED, {})
         assert (await watchdog.get_state()).suspended is True
-        await event_bus.publish(watchdog_module.EventName.PATROL_RESUMED, {})
+        await event_bus.publish(patrol_events.PATROL_RESUMED, {})
         assert (await watchdog.get_state()).suspended is False
     finally:
         await watchdog.stop()
@@ -187,17 +189,17 @@ async def test_start_and_stop_are_idempotent(watchdog_module) -> None:
     await watchdog.start()
 
     assert watchdog.is_running() is True
-    assert event_bus.subscriber_count(watchdog_module.EventName.PATROL_CYCLE_COMPLETED) == 1
-    assert event_bus.subscriber_count(watchdog_module.EventName.PATROL_SUSPENDED) == 1
-    assert event_bus.subscriber_count(watchdog_module.EventName.PATROL_RESUMED) == 1
+    assert event_bus.subscriber_count(patrol_events.PATROL_CYCLE_COMPLETED) == 1
+    assert event_bus.subscriber_count(patrol_events.PATROL_SUSPENDED) == 1
+    assert event_bus.subscriber_count(patrol_events.PATROL_RESUMED) == 1
 
     await watchdog.stop()
     await watchdog.stop()
 
     assert watchdog.is_running() is False
-    assert event_bus.subscriber_count(watchdog_module.EventName.PATROL_CYCLE_COMPLETED) == 0
-    assert event_bus.subscriber_count(watchdog_module.EventName.PATROL_SUSPENDED) == 0
-    assert event_bus.subscriber_count(watchdog_module.EventName.PATROL_RESUMED) == 0
+    assert event_bus.subscriber_count(patrol_events.PATROL_CYCLE_COMPLETED) == 0
+    assert event_bus.subscriber_count(patrol_events.PATROL_SUSPENDED) == 0
+    assert event_bus.subscriber_count(patrol_events.PATROL_RESUMED) == 0
 
 
 @pytest.mark.asyncio

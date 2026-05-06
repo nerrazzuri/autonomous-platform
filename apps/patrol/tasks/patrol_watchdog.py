@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from shared.core.config import get_config
+from apps.patrol import events as patrol_events
 from shared.core.event_bus import EventBus, EventName, get_event_bus
 from shared.core.logger import get_logger
 
@@ -172,17 +173,17 @@ class PatrolWatchdog:
             return
         self._subscription_ids = [
             self._event_bus.subscribe(
-                EventName.PATROL_CYCLE_COMPLETED,
+                patrol_events.PATROL_CYCLE_COMPLETED,
                 self._handle_cycle_completed,
                 subscriber_name="patrol-watchdog",
             ),
             self._event_bus.subscribe(
-                EventName.PATROL_SUSPENDED,
+                patrol_events.PATROL_SUSPENDED,
                 self._handle_patrol_suspended,
                 subscriber_name="patrol-watchdog",
             ),
             self._event_bus.subscribe(
-                EventName.PATROL_RESUMED,
+                patrol_events.PATROL_RESUMED,
                 self._handle_patrol_resumed,
                 subscriber_name="patrol-watchdog",
             ),
