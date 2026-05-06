@@ -15,6 +15,7 @@ from typing import Any
 from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
+from shared.diagnostics import DiagnosticReporter, error_codes, get_diagnostic_reporter
 
 
 logger = get_logger(__name__)
@@ -102,6 +103,7 @@ class SDKAdapter:
         sdk_lib_path: str | None = None,
         sdk_client: Any | None = None,
         allow_mock: bool = True,
+        reporter: DiagnosticReporter | None = None,
     ):
         config = get_config()
         self._quadruped_ip = quadruped_ip or config.quadruped.quadruped_ip
@@ -111,6 +113,8 @@ class SDKAdapter:
         self._max_forward_velocity = config.navigation.max_forward_velocity
         self._max_yaw_rate = config.navigation.max_yaw_rate
         self._allow_mock = allow_mock
+        self._diagnostic_reporter = reporter
+        self._diagnostic_dedupe_keys: set[str] = set()
         self._sdk_client = sdk_client if sdk_client is not None else self._create_sdk_client()
         self._mode = QuadrupedMode.DISCONNECTED
         self._last_command_velocity = (0.0, 0.0, 0.0)
@@ -135,6 +139,18 @@ class SDKAdapter:
         )
         if not result:
             self._set_error("Failed to connect quadruped SDK client")
+            self._report_diagnostic(
+                "error",
+                event="sdk.connect_failed",
+                message="Failed to connect quadruped SDK client.",
+                error_code=error_codes.SDK_CONNECT_FAILED,
+                details={
+                    "quadruped_ip": self._quadruped_ip,
+                    "local_ip": self._local_ip,
+                    "sdk_port": self._sdk_port,
+                },
+                dedupe_key="sdk.connect_failed",
+            )
             return False
 
         self._set_mode(QuadrupedMode.CONNECTED)
@@ -151,6 +167,7 @@ class SDKAdapter:
 
         result = await self._call_sdk("standUp", default=False)
         if not result:
+            self._report_command_result_failure("standUp")
             return False
         self._set_mode(QuadrupedMode.STANDING)
         return True
@@ -168,6 +185,7 @@ class SDKAdapter:
 
         result = await self._call_sdk("lieDown", default=False)
         if not result:
+            self._report_command_result_failure("lieDown")
             return False
         self._set_mode(QuadrupedMode.PASSIVE)
         return True
@@ -186,6 +204,7 @@ class SDKAdapter:
 
         result = await self._call_sdk("passive", default=False)
         if not result:
+            self._report_command_result_failure("passive")
             return False
         self._last_command_velocity = (0.0, 0.0, 0.0)
         self._set_mode(QuadrupedMode.PASSIVE)
@@ -200,6 +219,14 @@ class SDKAdapter:
         if not all(math.isfinite(value) for value in (vx, vy, yaw_rate)):
             self._set_error("move rejected non-finite velocity input")
             logger.warning("Rejected move command with non-finite velocity")
+            self._report_diagnostic(
+                "error",
+                event="sdk.command_failed",
+                message="Rejected SDK movement command with non-finite velocity.",
+                error_code=error_codes.SDK_COMMAND_FAILED,
+                details={"command": "move"},
+                dedupe_key="sdk.command_failed.move.non_finite",
+            )
             return False
 
         clamped_vx = self._clamp(vx, self._max_forward_velocity)
@@ -208,6 +235,7 @@ class SDKAdapter:
 
         result = await self._call_sdk("move", clamped_vx, clamped_vy, clamped_yaw, default=False)
         if not result:
+            self._report_command_result_failure("move")
             return False
 
         self._last_command_velocity = (clamped_vx, clamped_vy, clamped_yaw)
@@ -248,6 +276,14 @@ class SDKAdapter:
             if self._mode != QuadrupedMode.DISCONNECTED:
                 self._set_error("Quadruped SDK connection lost")
                 self._set_mode(QuadrupedMode.ERROR)
+                self._report_diagnostic(
+                    "error",
+                    event="sdk.connection_lost",
+                    message="Quadruped SDK connection lost.",
+                    error_code=error_codes.SDK_CONNECTION_LOST,
+                    details={"quadruped_ip": self._quadruped_ip},
+                    dedupe_key="sdk.connection_lost",
+                )
                 await self._publish_connection_event(EventName.QUADRUPED_CONNECTION_LOST)
             return False
         return True
@@ -278,6 +314,14 @@ class SDKAdapter:
         if method is None:
             self._set_error(f"SDK client missing method: {method_name}")
             logger.error("SDK method missing", extra={"method_name": method_name})
+            self._report_diagnostic(
+                "error",
+                event="sdk.command_failed",
+                message="SDK client is missing a required method.",
+                error_code=error_codes.SDK_COMMAND_FAILED,
+                details={"method_name": method_name, "reason": "missing_method"},
+                dedupe_key=f"sdk.command_failed.{method_name}.missing",
+            )
             return default
 
         try:
@@ -285,6 +329,14 @@ class SDKAdapter:
         except Exception as exc:
             self._set_error(f"{method_name} failed: {exc}")
             logger.exception("SDK call failed", extra={"method_name": method_name})
+            self._report_diagnostic(
+                "error",
+                event="sdk.command_failed",
+                message="SDK method call failed.",
+                error_code=error_codes.SDK_COMMAND_FAILED,
+                details={"method_name": method_name, "error_type": type(exc).__name__},
+                dedupe_key=f"sdk.command_failed.{method_name}.exception",
+            )
             return default
 
     async def _call_sdk_aliases(self, method_names: tuple[str, ...], *args, default: Any = None) -> Any:
@@ -298,10 +350,26 @@ class SDKAdapter:
             except Exception as exc:
                 self._set_error(f"{method_name} failed: {exc}")
                 logger.exception("SDK call failed", extra={"method_name": method_name})
+                self._report_diagnostic(
+                    "error",
+                    event="sdk.command_failed",
+                    message="SDK method call failed.",
+                    error_code=error_codes.SDK_COMMAND_FAILED,
+                    details={"method_name": method_name, "error_type": type(exc).__name__},
+                    dedupe_key=f"sdk.command_failed.{method_name}.exception",
+                )
                 return default
 
         self._set_error(f"SDK client missing method: {last_missing_name}")
         logger.error("SDK method missing", extra={"method_name": last_missing_name, "aliases": method_names})
+        self._report_diagnostic(
+            "error",
+            event="sdk.command_failed",
+            message="SDK client is missing a required method.",
+            error_code=error_codes.SDK_COMMAND_FAILED,
+            details={"method_name": last_missing_name, "aliases": list(method_names), "reason": "missing_method"},
+            dedupe_key=f"sdk.command_failed.{last_missing_name}.missing",
+        )
         return default
 
     def _create_sdk_client(self) -> Any:
@@ -310,6 +378,15 @@ class SDKAdapter:
             sdk_module = importlib.import_module("mc_sdk_zsl_1_py")
             return sdk_module.HighLevel()
         except Exception as exc:
+            if not self._allow_mock or self._diagnostic_reporter is not None:
+                self._report_diagnostic(
+                    "warning" if self._allow_mock else "critical",
+                    event="sdk.import_failed",
+                    message="Vendor SDK unavailable.",
+                    error_code=error_codes.SDK_IMPORT_FAILED,
+                    details={"error_type": type(exc).__name__, "allow_mock": self._allow_mock},
+                    dedupe_key="sdk.import_failed",
+                )
             if self._allow_mock:
                 logger.info("Vendor SDK unavailable, using null quadruped client")
                 return _NullSDKClient()
@@ -358,6 +435,46 @@ class SDKAdapter:
 
     def _set_error(self, message: str) -> None:
         self._last_error = message
+
+    def _report_command_result_failure(self, method_name: str) -> None:
+        self._report_diagnostic(
+            "error",
+            event="sdk.command_failed",
+            message="SDK command returned a failure result.",
+            error_code=error_codes.SDK_COMMAND_FAILED,
+            details={"method_name": method_name, "reason": "false_result"},
+            dedupe_key=f"sdk.command_failed.{method_name}.false_result",
+        )
+
+    def _report_diagnostic(
+        self,
+        severity: str,
+        *,
+        event: str,
+        message: str,
+        error_code: str | None = None,
+        context: dict[str, Any] | None = None,
+        details: dict[str, Any] | None = None,
+        dedupe_key: str | None = None,
+    ) -> None:
+        if dedupe_key is not None:
+            if dedupe_key in self._diagnostic_dedupe_keys:
+                return
+            self._diagnostic_dedupe_keys.add(dedupe_key)
+        try:
+            reporter = self._diagnostic_reporter or get_diagnostic_reporter("sdk_adapter")
+            reporter.report(
+                severity=severity,
+                event=event,
+                message=message,
+                error_code=error_code,
+                subsystem="sdk",
+                context=context,
+                source=__name__,
+                details=details,
+            )
+        except Exception:
+            logger.debug("SDK diagnostic reporting failed", exc_info=True)
 
     def _clamp(self, value: float, limit: float) -> float:
         return max(-limit, min(limit, float(value)))

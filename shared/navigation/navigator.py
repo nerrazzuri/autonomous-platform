@@ -11,6 +11,7 @@ from typing import Any, Iterable
 from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
+from shared.diagnostics import DiagnosticReporter, error_codes, get_diagnostic_reporter
 from shared.navigation.route_store import RouteDefinition, RouteStore, Waypoint, get_route_store
 from shared.quadruped.heartbeat import HeartbeatController, get_heartbeat_controller
 from shared.quadruped.sdk_adapter import SDKAdapter
@@ -77,6 +78,7 @@ class Navigator:
         slam_provider: Any | None = None,
         robot_id: str = "default",
         hold_release_event_names: Iterable[EventName | str] | None = None,
+        reporter: DiagnosticReporter | None = None,
     ) -> None:
         config = get_config()
         self._route_store = route_store or get_route_store()
@@ -143,6 +145,7 @@ class Navigator:
         self._subscription_ids: list[str] = []
         self._active_task_id: str | None = None
         self._hold_release_event_names = tuple(hold_release_event_names or ())
+        self._diagnostic_reporter = reporter
 
         # Obstacle policy state — reset at the start of each navigation
         self._obstacle_count: int = 0
@@ -225,6 +228,13 @@ class Navigator:
             self._base_payload(route, task_id),
             task_id=task_id,
         )
+        self._report_diagnostic(
+            "info",
+            event="navigation.started",
+            message="Navigation started.",
+            error_code=error_codes.NAVIGATION_STARTED,
+            context={"route_id": route.id, "task_id": task_id},
+        )
         logger.info("Navigation started", extra={"route_id": route.id, "task_id": task_id})
 
         try:
@@ -251,6 +261,16 @@ class Navigator:
                 message="Navigation completed",
             )
             self._publish_event(EventName.NAVIGATION_COMPLETED, self._result_payload(result), task_id=task_id)
+            self._report_diagnostic(
+                "info",
+                event="navigation.completed",
+                message="Navigation completed.",
+                context={"route_id": route.id, "task_id": task_id},
+                details={
+                    "completed_waypoints": result.completed_waypoints,
+                    "total_waypoints": result.total_waypoints,
+                },
+            )
             logger.info("Navigation completed", extra={"route_id": route.id, "task_id": task_id})
             return result
         except NavigationCancelledError:
@@ -277,6 +297,17 @@ class Navigator:
                 message=str(exc),
             )
             self._publish_event(EventName.NAVIGATION_BLOCKED, self._result_payload(result), task_id=task_id)
+            self._report_diagnostic(
+                "error",
+                event="navigation.blocked",
+                message="Navigation blocked beyond timeout.",
+                error_code=error_codes.NAVIGATION_BLOCKED,
+                context={"route_id": route.id, "task_id": task_id},
+                details={
+                    "completed_waypoints": result.completed_waypoints,
+                    "total_waypoints": result.total_waypoints,
+                },
+            )
             return result
         except NavigatorError as exc:
             self._last_error = str(exc)
@@ -288,6 +319,14 @@ class Navigator:
                 completed_waypoints=self._completed_waypoints,
                 total_waypoints=len(route.waypoints),
                 message=str(exc),
+            )
+            self._report_diagnostic(
+                "error",
+                event="navigation.failed",
+                message="Navigation failed.",
+                error_code=error_codes.NAVIGATION_FAILED,
+                context={"route_id": route.id, "task_id": task_id},
+                details={"reason": str(exc)},
             )
             return result
         except Exception as exc:
@@ -303,6 +342,14 @@ class Navigator:
                 message=f"Navigation failed: {exc}",
             )
             self._publish_event(EventName.NAVIGATION_FAILED, self._result_payload(result), task_id=task_id)
+            self._report_diagnostic(
+                "error",
+                event="navigation.failed",
+                message="Navigation failed unexpectedly.",
+                error_code=error_codes.NAVIGATION_FAILED,
+                context={"route_id": route.id, "task_id": task_id},
+                details={"error_type": type(exc).__name__},
+            )
             return result
         finally:
             self._cancel_stable_clear_task()
@@ -483,7 +530,9 @@ class Navigator:
             return
         # Cancel any pending stable-clear — obstacle is back.
         self._cancel_stable_clear_task()
+        became_blocked = False
         if not self._blocked:
+            became_blocked = True
             loop_time = asyncio.get_running_loop().time()
             self._blocked = True
             self._blocked_started_at = loop_time
@@ -499,7 +548,24 @@ class Navigator:
                         "route_id": self._current_route_id,
                     },
                 )
+                self._report_diagnostic(
+                    "warning",
+                    event="obstacle.repeated_manual_required",
+                    message="Repeated obstacle threshold reached; manual clearance is required.",
+                    error_code=error_codes.OBSTACLE_REPEATED_MANUAL_REQUIRED,
+                    context={"route_id": self._current_route_id, "task_id": self._active_task_id},
+                    details={"obstacle_count": self._obstacle_count, "threshold": self._obstacle_repeat_fallback_count},
+                )
         await self._clear_target_velocity("navigator_obstacle_detected")
+        if became_blocked:
+            self._report_diagnostic(
+                "warning",
+                event="navigation.blocked",
+                message="Navigation blocked by obstacle.",
+                error_code=error_codes.NAVIGATION_BLOCKED,
+                context={"route_id": self._current_route_id, "task_id": self._active_task_id},
+                details={"obstacle_count": self._obstacle_count},
+            )
         logger.warning("Navigation blocked by obstacle", extra={"route_id": self._current_route_id})
 
     async def _handle_obstacle_cleared(self, event: Any) -> None:
@@ -567,6 +633,14 @@ class Navigator:
             {"route_id": self._current_route_id, "task_id": self._active_task_id, "reason": reason},
             task_id=self._active_task_id,
         )
+        self._report_diagnostic(
+            "info",
+            event="navigation.resumed",
+            message="Navigation resumed after obstacle.",
+            error_code=error_codes.NAVIGATION_RESUMED,
+            context={"route_id": self._current_route_id, "task_id": self._active_task_id},
+            details={"reason": reason},
+        )
         logger.info(
             "Navigation resumed after obstacle",
             extra={"route_id": self._current_route_id, "reason": reason},
@@ -582,6 +656,14 @@ class Navigator:
             await self._heartbeat.clear_target_velocity(source=source)
         except Exception as exc:
             self._last_error = f"failed to clear heartbeat target: {exc}"
+            self._report_diagnostic(
+                "error",
+                event="navigation.failed",
+                message="Navigator failed to clear heartbeat target.",
+                error_code=error_codes.NAVIGATION_FAILED,
+                context={"route_id": self._current_route_id, "task_id": self._active_task_id},
+                details={"source": source, "error_type": type(exc).__name__},
+            )
             logger.warning("Navigator failed to clear heartbeat target", extra={"source": source})
 
     def _raise_if_cancelled(self) -> None:
@@ -624,6 +706,32 @@ class Navigator:
             logger.warning("Navigator event bus queue full", extra={"event_name": event_name.value})
         except Exception:
             logger.exception("Navigator failed to publish event", extra={"event_name": event_name.value})
+
+    def _report_diagnostic(
+        self,
+        severity: str,
+        *,
+        event: str,
+        message: str,
+        error_code: str | None = None,
+        context: dict[str, Any] | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            reporter = self._diagnostic_reporter or get_diagnostic_reporter("navigation")
+            reporter.report(
+                severity=severity,
+                event=event,
+                message=message,
+                error_code=error_code,
+                subsystem="navigation",
+                robot_id=self.robot_id,
+                context=context,
+                source=__name__,
+                details=details,
+            )
+        except Exception:
+            logger.debug("Navigator diagnostic reporting failed", exc_info=True)
 
     def _base_payload(self, route: RouteDefinition, task_id: str | None) -> dict[str, Any]:
         return {

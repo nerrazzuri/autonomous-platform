@@ -11,6 +11,7 @@ from shared.core.config import get_config
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
 from shared.core.database import Database, get_database
+from shared.diagnostics import DiagnosticReporter, error_codes, get_diagnostic_reporter
 from shared.quadruped.sdk_adapter import (
     QuadrupedMode,
     QuadrupedTelemetrySnapshot,
@@ -62,6 +63,7 @@ class StateMonitor:
         poll_interval_seconds: float | None = None,
         persist_telemetry: bool = True,
         robot_id: str = "default",
+        reporter: DiagnosticReporter | None = None,
     ):
         config = get_config()
         resolved_interval = poll_interval_seconds if poll_interval_seconds is not None else config.heartbeat.interval_seconds
@@ -85,6 +87,9 @@ class StateMonitor:
         self._battery_warn_emitted = False
         self._battery_critical_emitted = False
         self._database_initialized = False
+        self._diagnostic_reporter = reporter
+        self._poll_failure_reported = False
+        self._invalid_telemetry_reported = False
 
     async def start(self) -> None:
         if self._task is not None and not self._task.done():
@@ -100,6 +105,11 @@ class StateMonitor:
 
         self._stop_event = asyncio.Event()
         self._task = asyncio.create_task(self._run_loop(), name="platform-state-monitor")
+        self._report_diagnostic(
+            "info",
+            event="state_monitor.started",
+            message="State monitor started.",
+        )
         logger.info("Quadruped state monitor started")
 
     async def stop(self) -> None:
@@ -114,6 +124,11 @@ class StateMonitor:
             await self._task
         finally:
             self._task = None
+            self._report_diagnostic(
+                "info",
+                event="state_monitor.stopped",
+                message="State monitor stopped.",
+            )
             logger.info("Quadruped state monitor stopped")
 
     async def poll_once(self) -> QuadrupedState:
@@ -129,6 +144,14 @@ class StateMonitor:
 
         if self._persist_telemetry:
             await self._persist_state(state)
+
+        if self._poll_failure_reported:
+            self._poll_failure_reported = False
+            self._report_diagnostic(
+                "info",
+                event="telemetry.resumed",
+                message="Telemetry polling recovered.",
+            )
 
         return state
 
@@ -151,6 +174,15 @@ class StateMonitor:
                 await self.poll_once()
             except Exception as exc:
                 self._last_error = str(exc)
+                if not self._poll_failure_reported:
+                    self._poll_failure_reported = True
+                    self._report_diagnostic(
+                        "error",
+                        event="telemetry.stale",
+                        message="State monitor telemetry polling failed.",
+                        error_code=error_codes.SDK_TELEMETRY_STALE,
+                        details={"error_type": type(exc).__name__},
+                    )
                 logger.exception("State monitor poll failed")
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval_seconds)
@@ -163,27 +195,41 @@ class StateMonitor:
         return QuadrupedState(
             timestamp=datetime.now(timezone.utc),
             battery_pct=int(snapshot.battery_pct),
-            position=self._coerce_vector(snapshot.position),
-            rpy=self._coerce_vector(snapshot.rpy),
+            position=self._coerce_vector(snapshot.position, "position"),
+            rpy=self._coerce_vector(snapshot.rpy, "rpy"),
             control_mode=int(snapshot.control_mode),
             connection_ok=bool(snapshot.connection_ok),
             mode=snapshot.mode,
         )
 
-    def _coerce_vector(self, value: tuple[float, float, float] | list[float] | Any) -> tuple[float, float, float]:
+    def _coerce_vector(self, value: tuple[float, float, float] | list[float] | Any, field_name: str) -> tuple[float, float, float]:
         if isinstance(value, (list, tuple)) and len(value) == 3:
             try:
                 return (float(value[0]), float(value[1]), float(value[2]))
             except (TypeError, ValueError):
+                self._report_invalid_telemetry(field_name)
                 return (0.0, 0.0, 0.0)
+        self._report_invalid_telemetry(field_name)
         return (0.0, 0.0, 0.0)
 
     def _handle_connection_transition(self, state: QuadrupedState) -> None:
         if self._previous_connection_ok in {None, False} and state.connection_ok:
             self._safe_publish(EventName.QUADRUPED_CONNECTION_RESTORED, state.to_dict())
+            if self._previous_connection_ok is False:
+                self._report_diagnostic(
+                    "info",
+                    event="sdk.connection_restored",
+                    message="Quadruped SDK connection restored.",
+                )
             logger.info("Quadruped connection restored")
         elif self._previous_connection_ok is True and not state.connection_ok:
             self._safe_publish(EventName.QUADRUPED_CONNECTION_LOST, state.to_dict())
+            self._report_diagnostic(
+                "error",
+                event="sdk.connection_lost",
+                message="Quadruped SDK connection lost.",
+                error_code=error_codes.SDK_CONNECTION_LOST,
+            )
             logger.warning("Quadruped connection lost")
         self._previous_connection_ok = state.connection_ok
 
@@ -193,11 +239,25 @@ class StateMonitor:
         if state.is_battery_warn(config.battery.warn_pct) and not self._battery_warn_emitted:
             self._battery_warn_emitted = True
             self._safe_publish(EventName.BATTERY_WARN, state.to_dict())
+            self._report_diagnostic(
+                "warning",
+                event="battery.low",
+                message="Battery warning threshold reached.",
+                error_code=error_codes.BATTERY_LOW,
+                details={"battery_pct": state.battery_pct, "threshold_pct": config.battery.warn_pct},
+            )
             logger.warning("Quadruped battery warning threshold reached")
 
         if state.is_battery_critical(config.battery.critical_pct) and not self._battery_critical_emitted:
             self._battery_critical_emitted = True
             self._safe_publish(EventName.BATTERY_CRITICAL, state.to_dict())
+            self._report_diagnostic(
+                "critical",
+                event="battery.critical",
+                message="Battery critical threshold reached.",
+                error_code=error_codes.BATTERY_CRITICAL,
+                details={"battery_pct": state.battery_pct, "threshold_pct": config.battery.critical_pct},
+            )
             logger.warning("Quadruped battery critical threshold reached")
 
         if (
@@ -207,6 +267,13 @@ class StateMonitor:
             self._battery_warn_emitted = False
             self._battery_critical_emitted = False
             self._safe_publish(EventName.BATTERY_RECHARGED, state.to_dict())
+            self._report_diagnostic(
+                "info",
+                event="battery.recovered",
+                message="Battery recovered above resume threshold.",
+                error_code=error_codes.BATTERY_RECOVERED,
+                details={"battery_pct": state.battery_pct, "threshold_pct": config.battery.resume_pct},
+            )
 
     async def _persist_state(self, state: QuadrupedState) -> None:
         try:
@@ -237,6 +304,42 @@ class StateMonitor:
             logger.warning("State monitor event bus queue full", extra={"event_name": event_name.value})
         except Exception:
             logger.exception("State monitor failed to publish event")
+
+    def _report_invalid_telemetry(self, field_name: str) -> None:
+        if self._invalid_telemetry_reported:
+            return
+        self._invalid_telemetry_reported = True
+        self._report_diagnostic(
+            "error",
+            event="telemetry.invalid",
+            message="Invalid telemetry vector received.",
+            error_code=error_codes.SDK_POSITION_INVALID,
+            details={"field": field_name},
+        )
+
+    def _report_diagnostic(
+        self,
+        severity: str,
+        *,
+        event: str,
+        message: str,
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            reporter = self._diagnostic_reporter or get_diagnostic_reporter("state_monitor")
+            reporter.report(
+                severity=severity,
+                event=event,
+                message=message,
+                error_code=error_code,
+                subsystem="telemetry",
+                robot_id=self.robot_id,
+                source=__name__,
+                details=details,
+            )
+        except Exception:
+            logger.debug("State monitor diagnostic reporting failed", exc_info=True)
 
 
 state_monitor = StateMonitor()

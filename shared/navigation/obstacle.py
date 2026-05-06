@@ -10,6 +10,7 @@ from typing import Any
 
 from shared.core.event_bus import EventName, get_event_bus
 from shared.core.logger import get_logger
+from shared.diagnostics import DiagnosticReporter, error_codes, get_diagnostic_reporter
 
 
 logger = get_logger(__name__)
@@ -106,6 +107,7 @@ class ObstacleDetector:
         enabled: bool = True,
         stop_distance_m: float = 0.8,
         forward_arc_deg: float = 90.0,
+        reporter: DiagnosticReporter | None = None,
     ) -> None:
         if (
             isinstance(polling_interval_seconds, bool)
@@ -124,6 +126,9 @@ class ObstacleDetector:
         self._stop_event = asyncio.Event()
         self._poll_count = 0
         self._last_error: str | None = None
+        self._diagnostic_reporter = reporter
+        self._invalid_scan_reported = False
+        self._poll_failure_reported = False
 
     async def start(self) -> None:
         if self._task is not None and not self._task.done():
@@ -131,6 +136,7 @@ class ObstacleDetector:
 
         self._stop_event = asyncio.Event()
         self._task = asyncio.create_task(self._run_loop(), name="platform-obstacle-detector")
+        self._report_diagnostic("info", event="obstacle_detector.started", message="Obstacle detector started.")
         logger.info("Obstacle detector started", extra={"enabled": self._enabled})
 
     async def stop(self) -> None:
@@ -145,6 +151,7 @@ class ObstacleDetector:
             await self._task
         finally:
             self._task = None
+            self._report_diagnostic("info", event="obstacle_detector.stopped", message="Obstacle detector stopped.")
             logger.info("Obstacle detector stopped")
 
     async def poll_once(self) -> ObstacleStatus:
@@ -189,6 +196,15 @@ class ObstacleDetector:
                 return ObstacleStatus.detected(source="m10_lidar", confidence=1.0)
             return ObstacleStatus.clear()
         except Exception as exc:
+            if not self._invalid_scan_reported:
+                self._invalid_scan_reported = True
+                self._report_diagnostic(
+                    "warning",
+                    event="obstacle.scan_invalid",
+                    message="Obstacle detector received an invalid scan message.",
+                    error_code=error_codes.LIDAR_SCAN_TIMEOUT,
+                    details={"error_type": type(exc).__name__},
+                )
             logger.warning("Obstacle detector: invalid scan message", extra={"error": str(exc)})
             return ObstacleStatus.clear()
 
@@ -207,13 +223,44 @@ class ObstacleDetector:
             logger.warning("Obstacle detector event bus queue full", extra={"event_name": event_name.value})
         except Exception:
             logger.exception("Obstacle detector failed to publish event", extra={"event_name": event_name.value})
+        if current_status.obstacle_present:
+            self._report_diagnostic(
+                "warning",
+                event="obstacle.detected",
+                message="Obstacle detected in safety path.",
+                error_code=error_codes.OBSTACLE_DETECTED,
+                details=current_status.to_dict(),
+            )
+        else:
+            self._report_diagnostic(
+                "info",
+                event="obstacle.cleared",
+                message="Obstacle cleared from safety path.",
+                error_code=error_codes.OBSTACLE_CLEARED,
+                details=current_status.to_dict(),
+            )
 
     async def _run_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
                 await self.poll_once()
+                if self._poll_failure_reported:
+                    self._poll_failure_reported = False
+                    self._report_diagnostic(
+                        "info",
+                        event="obstacle_detector.recovered",
+                        message="Obstacle detector polling recovered.",
+                    )
             except Exception as exc:
                 self._last_error = str(exc)
+                if not self._poll_failure_reported:
+                    self._poll_failure_reported = True
+                    self._report_diagnostic(
+                        "error",
+                        event="obstacle_detector.poll_failed",
+                        message="Obstacle detector polling failed.",
+                        details={"error_type": type(exc).__name__},
+                    )
                 logger.exception("Obstacle detector poll failed")
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._polling_interval_seconds)
@@ -221,6 +268,29 @@ class ObstacleDetector:
                 continue
             except asyncio.CancelledError:
                 break
+
+    def _report_diagnostic(
+        self,
+        severity: str,
+        *,
+        event: str,
+        message: str,
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            reporter = self._diagnostic_reporter or get_diagnostic_reporter("obstacle")
+            reporter.report(
+                severity=severity,
+                event=event,
+                message=message,
+                error_code=error_code,
+                subsystem="obstacle",
+                source=__name__,
+                details=details,
+            )
+        except Exception:
+            logger.debug("Obstacle diagnostic reporting failed", exc_info=True)
 
 
 obstacle_detector = ObstacleDetector()
