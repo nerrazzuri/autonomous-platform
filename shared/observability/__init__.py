@@ -12,6 +12,13 @@ from shared.observability.alerts import (
 )
 from shared.observability.health import get_robot_health, get_system_health
 from shared.observability.metrics import get_metrics_snapshot
+from shared.observability.process_logs import (
+    ProcessLogCapture,
+    ProcessLogCaptureError,
+    ProcessStartError,
+    ProcessStatus,
+    sanitize_process_name,
+)
 from shared.observability.retention import RetentionPolicy, RetentionReport, apply_retention
 from shared.observability.status import (
     build_status_summary,
@@ -38,8 +45,13 @@ __all__ = [
     "register_alert_rule",
     "register_platform_alert_rules",
     "register_status_provider",
+    "ProcessLogCapture",
+    "ProcessLogCaptureError",
+    "ProcessStartError",
+    "ProcessStatus",
     "RetentionPolicy",
     "RetentionReport",
+    "sanitize_process_name",
     "unregister_status_provider",
     "unregister_alert_rule",
     "apply_retention",
