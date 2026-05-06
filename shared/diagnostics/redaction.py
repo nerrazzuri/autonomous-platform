@@ -26,6 +26,8 @@ def _is_sensitive_key(key: object) -> bool:
 
 def _json_safe(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
+        if isinstance(value, str) and value.strip().lower().startswith("bearer "):
+            return REDACTION_MARKER
         return value
     if isinstance(value, Mapping):
         return redact_mapping(value)

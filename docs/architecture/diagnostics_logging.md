@@ -16,7 +16,7 @@ Use these streams for different jobs:
 
 - Normal application logs: developer-facing log lines emitted through the project logger. Use them for routine execution details, stack traces, and debugging context.
 - Diagnostic events: structured, JSONL-compatible records for notable health, safety, configuration, dependency, network, runtime, or operator-action conditions. Use them when another module or operator may need to diagnose state.
-- Future module logs: per-module log files or module-scoped log routing may be added later. OBS-1 does not create module log files.
+- Module logs: per-module JSONL files created by the OBS-2 logging router. OBS-2 provides the file routing foundation, while later phases may add broader module instrumentation.
 - Future dashboard status: summarized health indicators may be shown in UI later. OBS-1 does not add dashboard widgets or status polling.
 
 ## DiagnosticEvent Schema
@@ -127,14 +127,75 @@ When adding diagnostics to a module:
 6. Do not let diagnostics publication raise into robot control, task execution, ROS integration, SDK calls, or API request handling.
 7. Add replayable or no-hardware tests when diagnostics behavior becomes part of a module contract.
 
-## OBS-1 Scope Limits
+## OBS-2 Logging Router
 
-OBS-1 defines the diagnostic event model and in-memory diagnostic ring buffer only.
+OBS-2 adds a standalone structured logging router under `shared.diagnostics.logging_router`. It is a foundation for future module instrumentation; it does not change existing runtime logging by itself.
 
-OBS-1 does not implement:
+Default layout:
+
+```text
+logs/
+  app.log
+  app.jsonl
+  modules/
+    sdk_adapter.jsonl
+    ros2_bridge.jsonl
+    navigation.jsonl
+    obstacle.jsonl
+    dispatcher.jsonl
+    task_queue.jsonl
+    hmi.jsonl
+    commissioning.jsonl
+    provisioning.jsonl
+    speaker.jsonl
+    tjc_agent.jsonl
+    system_health.jsonl
+```
+
+The router creates `logs/` and `logs/modules/`, writes a human-readable master log to `app.log`, writes a structured master stream to `app.jsonl`, and routes each structured record to a module-specific JSONL file. Unknown module names are sanitized before becoming filenames, so module strings cannot create paths outside `logs/modules/`.
+
+Use:
+
+```python
+from shared.diagnostics.logging_router import configure_diagnostics_logging, get_diagnostic_logger
+
+configure_diagnostics_logging(log_dir="logs")
+logger = get_diagnostic_logger("sdk_adapter")
+logger.info(
+    "SDK connection established",
+    extra={
+        "event": "sdk.connected",
+        "robot_id": "robot_01",
+        "details": {"attempt": 1},
+    },
+)
+```
+
+Structured records include:
+
+- `ts`
+- `level`
+- `module`
+- `event`
+- `message`
+- `robot_id`
+- `task_id`
+- `route_id`
+- `error_code`
+- `correlation_id`
+- `details`
+
+Details and extra fields are passed through the OBS-1 redaction helper before writing. Repeated configuration closes old router-owned handlers before installing new ones, and `shutdown_diagnostics_logging()` is safe to call multiple times. Rotation uses Python `RotatingFileHandler` with configurable byte and backup limits.
+
+## Scope Limits
+
+OBS-1 defines the diagnostic event model and in-memory diagnostic ring buffer.
+OBS-2 defines the standalone logging router and module log files.
+
+These phases do not implement:
 
 - Diagnostics REST API.
-- Per-module log files.
+- Heavy module-by-module instrumentation.
 - Dashboard status panels or dashboard status polling.
 - ROS process log capture.
 - Diagnostic bundle generation.

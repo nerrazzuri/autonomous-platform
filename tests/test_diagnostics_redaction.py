@@ -49,6 +49,12 @@ def test_non_sensitive_fields_preserved() -> None:
     assert redacted == {"module": "navigator", "count": 3, "enabled": True}
 
 
+def test_bearer_string_values_are_redacted() -> None:
+    redacted = redact_mapping({"header": "Bearer " + "placeholder"})
+
+    assert redacted["header"] == REDACTION_MARKER
+
+
 def test_ip_and_robot_id_not_redacted() -> None:
     redacted = redact_mapping({"robot_id": "robot_01", "robot_ip": "192.0.2.10", "route_id": "route_a"})
 
