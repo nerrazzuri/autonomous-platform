@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -112,6 +114,7 @@ async def test_full_startup_and_shutdown_without_hardware(monkeypatch: pytest.Mo
     sys.modules.pop("main", None)
     main_module = importlib.import_module("main")
     base_startup_module = main_module.base_startup
+    logistics_startup_module = importlib.import_module("apps.logistics.runtime.startup")
 
     monkeypatch.setattr(base_startup_module, "setup_logging", lambda: calls.append("setup_logging"))
     monkeypatch.setattr(
@@ -126,9 +129,9 @@ async def test_full_startup_and_shutdown_without_hardware(monkeypatch: pytest.Mo
     monkeypatch.setattr(base_startup_module, "get_state_monitor", lambda: LifecycleStub("state_monitor", calls))
     monkeypatch.setattr(base_startup_module, "get_obstacle_detector", lambda: LifecycleStub("obstacle", calls))
     monkeypatch.setattr(base_startup_module, "_load_enabled_robot_configs", lambda _config: [])
-    monkeypatch.setattr(main_module, "get_dispatcher", lambda: LifecycleStub("dispatcher", calls))
-    monkeypatch.setattr(main_module, "get_battery_manager", lambda: LifecycleStub("battery", calls))
-    monkeypatch.setattr(main_module, "get_watchdog", lambda: LifecycleStub("watchdog", calls))
+    monkeypatch.setattr(logistics_startup_module, "get_dispatcher", lambda: LifecycleStub("dispatcher", calls))
+    monkeypatch.setattr(logistics_startup_module, "get_battery_manager", lambda: LifecycleStub("battery", calls))
+    monkeypatch.setattr(logistics_startup_module, "get_watchdog", lambda: LifecycleStub("watchdog", calls))
     monkeypatch.setattr(
         base_startup_module,
         "get_sdk_adapter",
@@ -143,7 +146,17 @@ async def test_full_startup_and_shutdown_without_hardware(monkeypatch: pytest.Mo
     assert "route_store.load" in calls
     assert "start:event_bus" in calls
     assert "stop:event_bus" in calls
+    await _assert_no_aiosqlite_worker_threads()
     assert calls[-1] == "database.close"
+
+
+async def _assert_no_aiosqlite_worker_threads() -> None:
+    for _ in range(10):
+        if not any("_connection_worker_thread" in thread.name for thread in threading.enumerate()):
+            return
+        await asyncio.sleep(0.05)
+    leaked_threads = [thread.name for thread in threading.enumerate() if "_connection_worker_thread" in thread.name]
+    assert leaked_threads == []
 
 
 def _record_async(calls: list[str], name: str):
