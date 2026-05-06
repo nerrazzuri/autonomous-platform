@@ -67,12 +67,21 @@ class DiagnosticJSONFormatter(logging.Formatter):
             "event": getattr(record, "event", None),
             "message": record.getMessage(),
             "robot_id": getattr(record, "robot_id", None),
+            "context": self._extract_context(record),
             "task_id": getattr(record, "task_id", None),
             "route_id": getattr(record, "route_id", None),
             "error_code": getattr(record, "error_code", None),
             "correlation_id": getattr(record, "correlation_id", None),
             "details": details,
         }
+
+    def _extract_context(self, record: logging.LogRecord) -> dict[str, Any]:
+        raw_context = getattr(record, "context", None)
+        if isinstance(raw_context, Mapping):
+            return redact_mapping(raw_context)
+        if raw_context is not None:
+            return {"context": repr(raw_context)}
+        return {}
 
     def _extract_details(self, record: logging.LogRecord) -> dict[str, Any]:
         details: dict[str, Any] = {}
@@ -86,6 +95,7 @@ class DiagnosticJSONFormatter(logging.Formatter):
             "diagnostic_module",
             "event",
             "robot_id",
+            "context",
             "task_id",
             "route_id",
             "error_code",

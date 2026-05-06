@@ -38,16 +38,13 @@ Optional fields:
 
 - `subsystem`: subsystem label when finer grouping is useful.
 - `robot_id`: robot identifier when the event is robot-specific.
-- `task_id`: task identifier when the event is task-specific.
-- `route_id`: route identifier when the event is route-specific.
-- `station_id`: station identifier when the event is station-specific.
-- `waypoint_id`: waypoint identifier when the event is waypoint-specific.
+- `context`: small redacted dictionary for caller-provided correlation identifiers such as `task_id`, `route_id`, `station_id`, `waypoint_id`, `cycle_id`, or `job_id`.
 - `correlation_id`: request, cycle, job, or trace identifier used to group related events.
 - `source`: component or process that emitted the event.
 - `details`: small redacted dictionary with structured context.
 - `suggested_action`: concise next diagnostic step for an operator or developer.
 
-The optional `task_id`, `route_id`, `station_id`, and `waypoint_id` fields are generic correlation/context fields. They are not a reason to add more app-specific schema to the shared `DiagnosticEvent`; app-specific diagnostic meaning and error-code constants should live under the app package.
+Legacy top-level `task_id`, `route_id`, `station_id`, and `waypoint_id` fields are still accepted for compatibility and are mirrored into `context` when present. New code should put app/domain identifiers in `context` so the shared schema remains platform infrastructure rather than app workflow meaning.
 
 Do not put raw sensor data, map files, SDK payload dumps, authorization headers, tokens, passwords, private keys, attendee data, or full local config files in diagnostic events.
 
@@ -101,10 +98,10 @@ This example uses fake placeholder values only:
   "message": "Robot telemetry has not updated within the configured window.",
   "subsystem": "sdk",
   "robot_id": "<robot-id>",
-  "task_id": "<task-id>",
-  "route_id": "<route-id>",
-  "station_id": null,
-  "waypoint_id": null,
+  "context": {
+    "task_id": "<task-id>",
+    "route_id": "<route-id>"
+  },
   "correlation_id": "<correlation-id>",
   "source": "sdk_adapter",
   "suggested_action": "Check robot connection status and confirm telemetry resumes before continuing operations.",
@@ -164,6 +161,7 @@ logger.info(
     extra={
         "event": "sdk.connected",
         "robot_id": "robot_01",
+        "context": {"connection_attempt": 1},
         "details": {"attempt": 1},
     },
 )
@@ -177,8 +175,8 @@ Structured records include:
 - `event`
 - `message`
 - `robot_id`
-- `task_id`
-- `route_id`
+- `context`
+- `task_id` and `route_id` when supplied by legacy callers
 - `error_code`
 - `correlation_id`
 - `details`
@@ -200,6 +198,7 @@ reporter.error(
     message="Failed to connect to quadruped SDK.",
     error_code=error_codes.SDK_CONNECT_FAILED,
     robot_id="robot_01",
+    context={"connection_attempt": 1},
     details={"robot_ip": "192.168.1.10", "token": "secret"},
 )
 ```
@@ -215,6 +214,7 @@ reporter.warning(
     event="dispatcher.no_available_robot",
     message="No available robot for logistics dispatch.",
     error_code=logistics_error_codes.DISPATCHER_NO_AVAILABLE_ROBOT,
+    context={"task_id": "<task-id>"},
 )
 ```
 

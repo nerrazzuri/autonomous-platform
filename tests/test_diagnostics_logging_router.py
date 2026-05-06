@@ -45,6 +45,7 @@ def test_module_logger_writes_master_and_module_jsonl(tmp_path: Path) -> None:
         extra={
             "event": "sdk.connected",
             "robot_id": "robot_01",
+            "context": {"route_id": "context-route", "api_token": "fake-token-value"},
             "task_id": "task-1",
             "route_id": "route-a",
             "error_code": "sdk.connect_failed",
@@ -63,6 +64,7 @@ def test_module_logger_writes_master_and_module_jsonl(tmp_path: Path) -> None:
     assert record["event"] == "sdk.connected"
     assert record["message"] == "SDK connection established"
     assert record["robot_id"] == "robot_01"
+    assert record["context"] == {"route_id": "context-route", "api_token": "[REDACTED]"}
     assert record["task_id"] == "task-1"
     assert record["route_id"] == "route-a"
     assert record["error_code"] == "sdk.connect_failed"

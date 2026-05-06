@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from shared.core.logger import redact_sensitive
 
+ContextValue = str | int | float | bool | None
+
 
 _VALID_SEVERITIES = {"debug", "info", "warning", "error", "critical"}
 _VALID_ACTOR_TYPES = {"system", "operator", "api", "unknown"}
@@ -65,6 +67,23 @@ def _sanitize_metadata(value: object) -> dict[str, Any]:
     return safe_metadata
 
 
+def _sanitize_context(value: object) -> dict[str, ContextValue]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("context must be a dictionary")
+    safe_context = redact_sensitive(_json_safe(value))
+    json.dumps(safe_context)
+    normalized: dict[str, ContextValue] = {}
+    for key, item in safe_context.items():
+        context_key = _require_non_empty_string(str(key), "context key")
+        if item is None or isinstance(item, (str, int, float, bool)):
+            normalized[context_key] = item
+        else:
+            normalized[context_key] = json.dumps(item, default=str, sort_keys=True)
+    return normalized
+
+
 @dataclass(frozen=True)
 class AuditEvent:
     event_type: str
@@ -74,6 +93,9 @@ class AuditEvent:
     actor_type: str = "system"
     actor_id: str | None = None
     robot_id: str | None = None
+    context: dict[str, ContextValue] = field(default_factory=dict)
+    # Deprecated compatibility fields. App/domain-specific identifiers should
+    # be passed through context; these remain temporarily for existing callers.
     task_id: str | None = None
     cycle_id: str | None = None
     route_id: str | None = None
@@ -99,6 +121,12 @@ class AuditEvent:
         for field_name in ("actor_id", "robot_id", "task_id", "cycle_id", "route_id", "job_id", "message"):
             object.__setattr__(self, field_name, _normalize_optional_string(getattr(self, field_name), field_name))
 
+        context = _sanitize_context(self.context)
+        for field_name in ("task_id", "cycle_id", "route_id", "job_id"):
+            legacy_value = getattr(self, field_name)
+            if legacy_value is not None and field_name not in context:
+                context[field_name] = legacy_value
+        object.__setattr__(self, "context", context)
         object.__setattr__(self, "metadata", _sanitize_metadata(self.metadata))
 
     def to_dict(self) -> dict[str, Any]:
@@ -110,6 +138,7 @@ class AuditEvent:
             "actor_type": self.actor_type,
             "actor_id": self.actor_id,
             "robot_id": self.robot_id,
+            "context": dict(self.context),
             "task_id": self.task_id,
             "cycle_id": self.cycle_id,
             "route_id": self.route_id,
@@ -128,6 +157,7 @@ class AuditEvent:
             actor_type=payload.get("actor_type", "system"),
             actor_id=payload.get("actor_id"),
             robot_id=payload.get("robot_id"),
+            context=payload.get("context") or {},
             task_id=payload.get("task_id"),
             cycle_id=payload.get("cycle_id"),
             route_id=payload.get("route_id"),
