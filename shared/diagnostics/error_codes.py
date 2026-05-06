@@ -56,6 +56,11 @@ BATTERY_LOW = "battery.low"
 BATTERY_CRITICAL = "battery.critical"
 BATTERY_RECOVERED = "battery.recovered"
 
+# Process lifecycle
+PROCESS_START_FAILED = "process.start_failed"
+PROCESS_EXITED_NONZERO = "process.exited_nonzero"
+PROCESS_LOG_CAPTURE_FAILED = "process.log_capture_failed"
+
 # Config / startup
 CONFIG_FILE_MISSING = "config.file_missing"
 CONFIG_PLACEHOLDER_TOKEN = "config.placeholder_token"
@@ -73,6 +78,8 @@ SUGGESTED_ACTIONS: dict[str, str] = {
     TF_MISSING_ODOM_BASE: "Inspect TF publication between odom and BASE_LINK before navigation.",
     OBSTACLE_REPEATED_MANUAL_REQUIRED: "Ask an operator to inspect the path and clear or classify the repeated obstacle.",
     BATTERY_CRITICAL: "Charge or dock the robot and confirm battery level recovers before continuing operation.",
+    PROCESS_START_FAILED: "Check the command path, executable permissions, environment sourcing, and working directory.",
+    PROCESS_EXITED_NONZERO: "Inspect the captured stdout/stderr logs for the process failure reason.",
     CONFIG_PLACEHOLDER_TOKEN: "Replace placeholder tokens in local configuration before enabling protected controls.",
 }
 

@@ -220,6 +220,40 @@ reporter.warning(
 
 The logistics code above imports logistics error codes from `apps.logistics.diagnostics`; those codes are not defined in `shared.diagnostics`. By default, reporter failures are contained and return `None` so diagnostics publication does not interrupt runtime behavior. Tests or strict development paths may enable `raise_on_error=True`.
 
+## OBS-6 ROS Process Log Capture
+
+OBS-6 adds `shared.observability.process_logs.ProcessLogCapture`, a generic process stdout/stderr capture utility for ROS-related helper processes and other platform subprocesses. It is process infrastructure only: it does not import ROS, parse ROS messages, subscribe to raw sensor topics, or change launch files by itself.
+
+Default process log layout:
+
+```text
+logs/
+  ros/
+    <process>.stdout.log
+    <process>.stderr.log
+```
+
+The utility tracks process name, redacted command, PID, start time, exit time, exit code, and log file paths. It emits fail-safe diagnostic events for:
+
+- `process.started`
+- `process.exited`
+- `process.failed`
+- `process.start_failed`
+- `process.log_capture_failed`
+
+Command details are redacted before diagnostics are stored or logged. Do not pass raw environment dumps, tokens, passwords, authorization headers, raw sensor frames, map payloads, or full ROS messages into process diagnostics.
+
+ROS helper wrapper:
+
+```bash
+python3.10 scripts/ros/run_with_process_logs.py \
+  --name localization \
+  --log-dir logs \
+  -- ros2 launch robot_bringup localization.launch.py map_file:=<map.yaml>
+```
+
+The wrapper returns the child process exit code and prints the stdout/stderr log paths. It works with any command and does not require ROS to import, so it can be tested on a workstation without sourced ROS.
+
 ## Scope Limits
 
 OBS-1 defines the diagnostic event model and in-memory diagnostic ring buffer.
@@ -230,7 +264,6 @@ These phases do not implement:
 - Diagnostics REST API.
 - Heavy module-by-module instrumentation.
 - Dashboard status panels or dashboard status polling.
-- ROS process log capture.
 - Diagnostic bundle generation.
 - Log digest CLI.
 - Production readiness, certification, or field accuracy guarantees.
