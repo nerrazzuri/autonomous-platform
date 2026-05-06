@@ -3,6 +3,7 @@ from __future__ import annotations
 """In-process alert normalization, routing, and read-only access."""
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 import json
@@ -20,45 +21,27 @@ logger = get_logger(__name__)
 
 _VALID_SEVERITIES = {"info", "warning", "error", "critical"}
 _DEFAULT_MAX_ALERTS = 1000
-_ALERT_SUBSCRIPTIONS = (
-    EventName.SYSTEM_ALERT,
-    EventName.BATTERY_CRITICAL,
-    EventName.TASK_FAILED,
-    EventName.ESTOP_TRIGGERED,
-    EventName.ESTOP_RELEASED,
-    EventName.PATROL_CYCLE_FAILED,
-)
-_DEFAULT_ALERT_MESSAGES = {
-    EventName.BATTERY_CRITICAL: "Battery level is critical",
-    EventName.TASK_FAILED: "Logistics task failed",
-    EventName.ESTOP_TRIGGERED: "Emergency stop triggered",
-    EventName.ESTOP_RELEASED: "Emergency stop released",
-    EventName.PATROL_CYCLE_FAILED: "Patrol cycle failed",
-}
-_DEFAULT_ALERT_SOURCES = {
-    EventName.BATTERY_CRITICAL: "battery",
-    EventName.TASK_FAILED: "dispatcher",
-    EventName.ESTOP_TRIGGERED: "system",
-    EventName.ESTOP_RELEASED: "system",
-    EventName.PATROL_CYCLE_FAILED: "patrol",
-}
-_DEFAULT_ALERT_SEVERITIES = {
-    EventName.BATTERY_CRITICAL: "critical",
-    EventName.TASK_FAILED: "error",
-    EventName.ESTOP_TRIGGERED: "warning",
-    EventName.ESTOP_RELEASED: "info",
-    EventName.PATROL_CYCLE_FAILED: "error",
-}
-_EVENT_TYPE_MAP = {
-    EventName.BATTERY_CRITICAL: "battery_critical",
-    EventName.TASK_FAILED: "logistics_task_failed",
-    EventName.ESTOP_TRIGGERED: "estop_triggered",
-    EventName.ESTOP_RELEASED: "estop_released",
-    EventName.PATROL_CYCLE_FAILED: "patrol_cycle_failed",
-}
 _OPTIONAL_ID_FIELDS = ("robot_id", "task_id", "cycle_id", "route_id", "job_id")
 _GLOBAL_ROUTER_LOCK = threading.Lock()
+_ALERT_RULE_LOCK = threading.RLock()
+_alert_rules: dict[str, AlertRule] = {}
 _alert_router: AlertRouter | None = None
+
+
+@dataclass(frozen=True)
+class AlertRule:
+    event_name: EventName | str
+    alert_type: str
+    default_message: str
+    severity: str = "warning"
+    source: str = "system"
+    builder: Callable[[Event], "Alert"] | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_empty_string(self.alert_type, "alert_type")
+        _require_non_empty_string(self.default_message, "default_message")
+        _normalize_severity(self.severity)
+        _require_non_empty_string(self.source, "source")
 
 
 def _utc_now_iso() -> str:
@@ -133,11 +116,59 @@ def _source_from_text(*values: object) -> str:
             return "battery"
         if "provision" in normalized:
             return "provisioning"
-        if "dispatch" in normalized:
-            return "dispatcher"
-        if "patrol" in normalized:
-            return "patrol"
     return "system"
+
+
+def _event_name_key(event_name: EventName | str) -> str:
+    return event_name.value if isinstance(event_name, EventName) else str(event_name)
+
+
+def register_alert_rule(
+    rule: AlertRule | None = None,
+    *,
+    event_name: EventName | str | None = None,
+    alert_type: str | None = None,
+    default_message: str | None = None,
+    severity: str = "warning",
+    source: str = "system",
+    builder: Callable[[Event], "Alert"] | None = None,
+) -> AlertRule:
+    """Register an alert normalization rule for an event bus event."""
+
+    if rule is None:
+        if event_name is None or alert_type is None or default_message is None:
+            raise ValueError("event_name, alert_type, and default_message are required")
+        rule = AlertRule(
+            event_name=event_name,
+            alert_type=alert_type,
+            default_message=default_message,
+            severity=severity,
+            source=source,
+            builder=builder,
+        )
+    with _ALERT_RULE_LOCK:
+        _alert_rules[_event_name_key(rule.event_name)] = rule
+    return rule
+
+
+def unregister_alert_rule(event_name: EventName | str) -> None:
+    with _ALERT_RULE_LOCK:
+        _alert_rules.pop(_event_name_key(event_name), None)
+
+
+def clear_alert_rules() -> None:
+    with _ALERT_RULE_LOCK:
+        _alert_rules.clear()
+
+
+def get_registered_alert_rules() -> tuple[AlertRule, ...]:
+    with _ALERT_RULE_LOCK:
+        return tuple(_alert_rules.values())
+
+
+def register_platform_alert_rules() -> None:
+    for rule in _PLATFORM_ALERT_RULES:
+        register_alert_rule(rule)
 
 
 @dataclass
@@ -194,6 +225,138 @@ class Alert:
         }
 
 
+def _alert_from_system_event(event: Event) -> Alert:
+    payload = dict(event.payload or {})
+    reason = payload.pop("reason", None)
+    event_type = _require_non_empty_string(reason or "system_alert", "event_type")
+    raw_message = payload.pop("message", None)
+    message = raw_message.strip() if isinstance(raw_message, str) and raw_message.strip() else event_type.replace("_", " ")
+    task_id = payload.pop("task_id", None) or payload.pop("active_task_id", None) or event.task_id
+    cycle_id = payload.pop("cycle_id", None)
+    route_id = payload.pop("route_id", None)
+    job_id = payload.pop("job_id", None)
+    robot_id = payload.pop("robot_id", None)
+    module_name = payload.pop("module", None)
+    return Alert(
+        alert_id=event.event_id,
+        timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
+        severity=payload.pop("severity", "warning"),
+        source=_source_from_text(module_name, event.source),
+        event_type=event_type,
+        message=message,
+        robot_id=robot_id,
+        task_id=task_id,
+        cycle_id=cycle_id,
+        route_id=route_id,
+        job_id=job_id,
+        metadata=payload,
+    )
+
+
+def _alert_from_battery_event(event: Event) -> Alert:
+    payload = dict(event.payload or {})
+    robot_id = payload.pop("robot_id", None)
+    return Alert(
+        alert_id=event.event_id,
+        timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
+        severity="critical",
+        source="battery",
+        event_type="battery_critical",
+        message="Battery level is critical",
+        robot_id=robot_id,
+        task_id=event.task_id,
+        metadata=payload,
+    )
+
+
+def _alert_from_estop_event(event: Event) -> Alert:
+    payload = dict(event.payload or {})
+    rule = _get_alert_rule(event.name)
+    if rule is None:
+        raise ValueError(f"No alert rule registered for event: {_event_name_key(event.name)}")
+    source = _source_from_text(payload.get("source"), event.source, rule.source)
+    message = rule.default_message
+    reason = payload.get("reason")
+    if isinstance(reason, str) and reason.strip() and event.name is EventName.ESTOP_TRIGGERED:
+        message = f"{message}: {reason.strip()}"
+    return Alert(
+        alert_id=event.event_id,
+        timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
+        severity=rule.severity,
+        source=source,
+        event_type=rule.alert_type,
+        message=message,
+        robot_id=payload.pop("robot_id", None),
+        task_id=payload.pop("task_id", None) or event.task_id,
+        cycle_id=payload.pop("cycle_id", None),
+        route_id=payload.pop("route_id", None),
+        job_id=payload.pop("job_id", None),
+        metadata=payload,
+    )
+
+
+def _alert_from_rule(event: Event, rule: AlertRule) -> Alert:
+    payload = dict(event.payload or {})
+    return Alert(
+        alert_id=event.event_id,
+        timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
+        severity=rule.severity,
+        source=rule.source,
+        event_type=rule.alert_type,
+        message=rule.default_message,
+        robot_id=payload.pop("robot_id", None),
+        task_id=payload.pop("task_id", None) or event.task_id,
+        cycle_id=payload.pop("cycle_id", None),
+        route_id=payload.pop("route_id", None),
+        job_id=payload.pop("job_id", None),
+        metadata=payload,
+    )
+
+
+_PLATFORM_ALERT_RULES = (
+    AlertRule(
+        event_name=EventName.SYSTEM_ALERT,
+        alert_type="system_alert",
+        default_message="System alert",
+        severity="warning",
+        source="system",
+        builder=_alert_from_system_event,
+    ),
+    AlertRule(
+        event_name=EventName.BATTERY_CRITICAL,
+        alert_type="battery_critical",
+        default_message="Battery level is critical",
+        severity="critical",
+        source="battery",
+        builder=_alert_from_battery_event,
+    ),
+    AlertRule(
+        event_name=EventName.ESTOP_TRIGGERED,
+        alert_type="estop_triggered",
+        default_message="Emergency stop triggered",
+        severity="warning",
+        source="system",
+        builder=_alert_from_estop_event,
+    ),
+    AlertRule(
+        event_name=EventName.ESTOP_RELEASED,
+        alert_type="estop_released",
+        default_message="Emergency stop released",
+        severity="info",
+        source="system",
+        builder=_alert_from_estop_event,
+    ),
+)
+
+
+def _get_alert_rule(event_name: EventName | str) -> AlertRule | None:
+    with _ALERT_RULE_LOCK:
+        return _alert_rules.get(_event_name_key(event_name))
+
+
+register_platform_alert_rules()
+
+
 class AlertRouter:
     def __init__(
         self,
@@ -219,9 +382,10 @@ class AlertRouter:
         if self._subscription_ids:
             self._running = True
             return
+        registered_rules = get_registered_alert_rules()
         self._subscription_ids = [
             self._event_bus.subscribe(event_name, self._handle_event, subscriber_name="observability_alert_router")
-            for event_name in _ALERT_SUBSCRIPTIONS
+            for event_name in [rule.event_name for rule in registered_rules]
         ]
         self._running = True
 
@@ -361,118 +525,12 @@ class AlertRouter:
             )
 
     def _alert_from_event(self, event: Event) -> Alert | None:
-        if event.name is EventName.SYSTEM_ALERT:
-            return self._alert_from_system_event(event)
-        if event.name is EventName.BATTERY_CRITICAL:
-            return self._alert_from_battery_event(event)
-        if event.name is EventName.TASK_FAILED:
-            return self._alert_from_task_failed_event(event)
-        if event.name in {EventName.ESTOP_TRIGGERED, EventName.ESTOP_RELEASED}:
-            return self._alert_from_estop_event(event)
-        if event.name is EventName.PATROL_CYCLE_FAILED:
-            return self._alert_from_patrol_failure_event(event)
-        return None
-
-    def _alert_from_system_event(self, event: Event) -> Alert:
-        payload = dict(event.payload or {})
-        reason = payload.pop("reason", None)
-        event_type = _require_non_empty_string(reason or "system_alert", "event_type")
-        raw_message = payload.pop("message", None)
-        message = raw_message.strip() if isinstance(raw_message, str) and raw_message.strip() else event_type.replace("_", " ")
-        task_id = payload.pop("task_id", None) or payload.pop("active_task_id", None) or event.task_id
-        cycle_id = payload.pop("cycle_id", None)
-        route_id = payload.pop("route_id", None)
-        job_id = payload.pop("job_id", None)
-        robot_id = payload.pop("robot_id", None)
-        module_name = payload.pop("module", None)
-        return Alert(
-            alert_id=event.event_id,
-            timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
-            severity=payload.pop("severity", "warning"),
-            source=_source_from_text(module_name, event.source),
-            event_type=event_type,
-            message=message,
-            robot_id=robot_id,
-            task_id=task_id,
-            cycle_id=cycle_id,
-            route_id=route_id,
-            job_id=job_id,
-            metadata=payload,
-        )
-
-    def _alert_from_battery_event(self, event: Event) -> Alert:
-        payload = dict(event.payload or {})
-        robot_id = payload.pop("robot_id", None)
-        return Alert(
-            alert_id=event.event_id,
-            timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
-            severity="critical",
-            source="battery",
-            event_type="battery_critical",
-            message="Battery level is critical",
-            robot_id=robot_id,
-            task_id=event.task_id,
-            metadata=payload,
-        )
-
-    def _alert_from_task_failed_event(self, event: Event) -> Alert:
-        payload = dict(event.payload or {})
-        raw_message = payload.get("notes")
-        message = raw_message.strip() if isinstance(raw_message, str) and raw_message.strip() else "Logistics task failed"
-        return Alert(
-            alert_id=event.event_id,
-            timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
-            severity="error",
-            source="dispatcher",
-            event_type="logistics_task_failed",
-            message=message,
-            robot_id=payload.pop("robot_id", None),
-            task_id=payload.pop("task_id", None) or event.task_id,
-            metadata=payload,
-        )
-
-    def _alert_from_estop_event(self, event: Event) -> Alert:
-        payload = dict(event.payload or {})
-        event_type = _EVENT_TYPE_MAP[event.name]
-        severity = _DEFAULT_ALERT_SEVERITIES[event.name]
-        source = _source_from_text(payload.get("source"), event.source, _DEFAULT_ALERT_SOURCES[event.name])
-        message = _DEFAULT_ALERT_MESSAGES[event.name]
-        reason = payload.get("reason")
-        if isinstance(reason, str) and reason.strip() and event.name is EventName.ESTOP_TRIGGERED:
-            message = f"Emergency stop triggered: {reason.strip()}"
-        return Alert(
-            alert_id=event.event_id,
-            timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
-            severity=severity,
-            source=source,
-            event_type=event_type,
-            message=message,
-            robot_id=payload.pop("robot_id", None),
-            task_id=payload.pop("task_id", None) or event.task_id,
-            cycle_id=payload.pop("cycle_id", None),
-            route_id=payload.pop("route_id", None),
-            job_id=payload.pop("job_id", None),
-            metadata=payload,
-        )
-
-    def _alert_from_patrol_failure_event(self, event: Event) -> Alert:
-        payload = dict(event.payload or {})
-        raw_reason = payload.get("reason")
-        message = raw_reason.strip() if isinstance(raw_reason, str) and raw_reason.strip() else "Patrol cycle failed"
-        return Alert(
-            alert_id=event.event_id,
-            timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
-            severity="error",
-            source="patrol",
-            event_type="patrol_cycle_failed",
-            message=message,
-            robot_id=payload.pop("robot_id", None),
-            task_id=payload.pop("task_id", None) or event.task_id,
-            cycle_id=payload.pop("cycle_id", None) or event.task_id,
-            route_id=payload.pop("route_id", None),
-            job_id=payload.pop("job_id", None),
-            metadata=payload,
-        )
+        rule = _get_alert_rule(event.name)
+        if rule is None:
+            return None
+        if rule.builder is not None:
+            return rule.builder(event)
+        return _alert_from_rule(event, rule)
 
 
 def get_alert_router() -> AlertRouter:
@@ -532,8 +590,14 @@ def emit_alert(
 
 __all__ = [
     "Alert",
+    "AlertRule",
     "AlertRouter",
     "MASKED_VALUE",
+    "clear_alert_rules",
     "emit_alert",
+    "get_registered_alert_rules",
     "get_alert_router",
+    "register_alert_rule",
+    "register_platform_alert_rules",
+    "unregister_alert_rule",
 ]

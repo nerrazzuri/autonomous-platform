@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import threading
 from typing import Any
 from uuid import uuid4
 
@@ -17,14 +18,8 @@ from shared.core.logger import get_logger
 
 logger = get_logger(__name__)
 
-_RELEVANT_EVENT_NAMES = {
+_PLATFORM_WEBSOCKET_EVENTS = (
     EventName.QUADRUPED_TELEMETRY,
-    EventName.TASK_STATUS_CHANGED,
-    EventName.TASK_SUBMITTED,
-    EventName.TASK_DISPATCHED,
-    EventName.TASK_COMPLETED,
-    EventName.TASK_FAILED,
-    EventName.TASK_CANCELLED,
     EventName.SYSTEM_ALERT,
     EventName.BATTERY_WARN,
     EventName.BATTERY_CRITICAL,
@@ -35,15 +30,55 @@ _RELEVANT_EVENT_NAMES = {
     EventName.NAVIGATION_FAILED,
     EventName.ESTOP_TRIGGERED,
     EventName.ESTOP_RELEASED,
-    EventName.PATROL_CYCLE_STARTED,
-    EventName.PATROL_CYCLE_COMPLETED,
-    EventName.PATROL_CYCLE_FAILED,
-    EventName.PATROL_WAYPOINT_OBSERVED,
-    EventName.PATROL_ANOMALY_DETECTED,
-    EventName.PATROL_ANOMALY_CLEARED,
-    EventName.PATROL_SUSPENDED,
-    EventName.PATROL_RESUMED,
-}
+)
+_WEBSOCKET_EVENT_LOCK = threading.RLock()
+_websocket_forwarding_events: set[str] = set()
+
+
+def _event_name_key(event_name: EventName | str) -> str:
+    return event_name.value if isinstance(event_name, EventName) else str(event_name)
+
+
+def register_websocket_forwarding_event(event_name: EventName | str) -> None:
+    normalized = _event_name_key(event_name).strip()
+    if not normalized:
+        raise ValueError("event_name must be a non-empty string")
+    with _WEBSOCKET_EVENT_LOCK:
+        _websocket_forwarding_events.add(normalized)
+
+
+def unregister_websocket_forwarding_event(event_name: EventName | str) -> None:
+    with _WEBSOCKET_EVENT_LOCK:
+        _websocket_forwarding_events.discard(_event_name_key(event_name))
+
+
+def clear_websocket_forwarding_events() -> None:
+    with _WEBSOCKET_EVENT_LOCK:
+        _websocket_forwarding_events.clear()
+
+
+def get_registered_websocket_events() -> set[EventName | str]:
+    registered: set[EventName | str] = set()
+    with _WEBSOCKET_EVENT_LOCK:
+        for event_name in _websocket_forwarding_events:
+            try:
+                registered.add(EventName(event_name))
+            except ValueError:
+                registered.add(event_name)
+    return registered
+
+
+def register_platform_websocket_events() -> None:
+    for event_name in _PLATFORM_WEBSOCKET_EVENTS:
+        register_websocket_forwarding_event(event_name)
+
+
+def _is_websocket_forwarding_event(event_name: EventName | str) -> bool:
+    with _WEBSOCKET_EVENT_LOCK:
+        return _event_name_key(event_name) in _websocket_forwarding_events
+
+
+register_platform_websocket_events()
 
 
 class WebSocketBrokerError(Exception):
@@ -159,7 +194,7 @@ class WebSocketBroker:
             await self.disconnect(client_id)
 
     async def handle_event(self, event: Event) -> None:
-        if event.name not in _RELEVANT_EVENT_NAMES:
+        if not _is_websocket_forwarding_event(event.name):
             return
 
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -249,13 +284,18 @@ def get_ws_broker() -> WebSocketBroker:
 
 
 __all__ = [
+    "clear_websocket_forwarding_events",
     "Event",
     "EventName",
     "Role",
     "WebSocketBroker",
     "WebSocketBrokerError",
     "WebSocketClient",
+    "get_registered_websocket_events",
     "get_ws_broker",
+    "register_platform_websocket_events",
+    "register_websocket_forwarding_event",
+    "unregister_websocket_forwarding_event",
     "websocket_endpoint",
     "ws_broker",
 ]

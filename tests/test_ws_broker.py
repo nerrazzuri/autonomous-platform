@@ -51,7 +51,11 @@ def ws_module(monkeypatch: pytest.MonkeyPatch):
         )
     )
     monkeypatch.setattr(auth_module, "get_config", lambda: config)
-    return module, EventBus()
+    module.clear_websocket_forwarding_events()
+    module.register_platform_websocket_events()
+    yield module, EventBus()
+    module.clear_websocket_forwarding_events()
+    module.register_platform_websocket_events()
 
 
 @pytest.mark.asyncio
@@ -174,6 +178,7 @@ async def test_handle_event_broadcasts_listed_event(ws_module) -> None:
     module, event_bus = ws_module
     broker = module.WebSocketBroker(event_bus=event_bus)
     websocket = FakeWebSocket()
+    module.register_websocket_forwarding_event(module.EventName.TASK_STATUS_CHANGED)
 
     await broker.connect(websocket, token=TEST_OPERATOR_TOKEN, station_id="A")
     event = module.Event(
@@ -196,6 +201,8 @@ async def test_handle_event_broadcasts_listed_event(ws_module) -> None:
             "payload": {"station_id": "A", "status": "dispatched"},
         }
     ]
+
+    module.unregister_websocket_forwarding_event(module.EventName.TASK_STATUS_CHANGED)
 
 
 @pytest.mark.asyncio
@@ -300,6 +307,7 @@ async def test_robot_id_filter_does_not_bypass_station_filter(ws_module) -> None
     module, event_bus = ws_module
     broker = module.WebSocketBroker(event_bus=event_bus)
     websocket = FakeWebSocket()
+    module.register_websocket_forwarding_event(module.EventName.TASK_STATUS_CHANGED)
 
     await broker.connect(websocket, token=TEST_OPERATOR_TOKEN, station_id="A", robot_id="robot_01")
     event = module.Event(
@@ -335,14 +343,71 @@ async def test_multiple_filtered_clients_receive_only_their_robot_events(ws_modu
 def test_patrol_events_are_relevant_to_websocket_broker(ws_module) -> None:
     module, _event_bus = ws_module
 
-    assert module.EventName.PATROL_CYCLE_STARTED in module._RELEVANT_EVENT_NAMES
-    assert module.EventName.PATROL_CYCLE_COMPLETED in module._RELEVANT_EVENT_NAMES
-    assert module.EventName.PATROL_CYCLE_FAILED in module._RELEVANT_EVENT_NAMES
-    assert module.EventName.PATROL_WAYPOINT_OBSERVED in module._RELEVANT_EVENT_NAMES
-    assert module.EventName.PATROL_ANOMALY_DETECTED in module._RELEVANT_EVENT_NAMES
-    assert module.EventName.PATROL_ANOMALY_CLEARED in module._RELEVANT_EVENT_NAMES
-    assert module.EventName.PATROL_SUSPENDED in module._RELEVANT_EVENT_NAMES
-    assert module.EventName.PATROL_RESUMED in module._RELEVANT_EVENT_NAMES
+    module.clear_websocket_forwarding_events()
+    module.register_platform_websocket_events()
+
+    assert module.EventName.QUADRUPED_TELEMETRY in module.get_registered_websocket_events()
+    assert module.EventName.PATROL_CYCLE_STARTED not in module.get_registered_websocket_events()
+    assert module.EventName.PATROL_CYCLE_COMPLETED not in module.get_registered_websocket_events()
+    assert module.EventName.PATROL_CYCLE_FAILED not in module.get_registered_websocket_events()
+    assert module.EventName.PATROL_WAYPOINT_OBSERVED not in module.get_registered_websocket_events()
+    assert module.EventName.PATROL_ANOMALY_DETECTED not in module.get_registered_websocket_events()
+    assert module.EventName.PATROL_ANOMALY_CLEARED not in module.get_registered_websocket_events()
+    assert module.EventName.PATROL_SUSPENDED not in module.get_registered_websocket_events()
+    assert module.EventName.PATROL_RESUMED not in module.get_registered_websocket_events()
+
+
+def test_logistics_websocket_registration_lives_in_app_layer(ws_module) -> None:
+    module, _event_bus = ws_module
+    from apps.logistics.observability.websocket import register_logistics_websocket_events
+
+    module.clear_websocket_forwarding_events()
+    register_logistics_websocket_events()
+
+    registered_events = module.get_registered_websocket_events()
+
+    assert module.EventName.TASK_STATUS_CHANGED in registered_events
+    assert module.EventName.TASK_FAILED in registered_events
+    assert module.EventName.PATROL_CYCLE_FAILED not in registered_events
+
+    module.clear_websocket_forwarding_events()
+    module.register_platform_websocket_events()
+
+
+def test_patrol_websocket_registration_lives_in_app_layer(ws_module) -> None:
+    module, _event_bus = ws_module
+    from apps.patrol.observability.websocket import register_patrol_websocket_events
+
+    module.clear_websocket_forwarding_events()
+    register_patrol_websocket_events()
+
+    registered_events = module.get_registered_websocket_events()
+
+    assert module.EventName.PATROL_CYCLE_STARTED in registered_events
+    assert module.EventName.PATROL_CYCLE_FAILED in registered_events
+    assert module.EventName.PATROL_WAYPOINT_OBSERVED in registered_events
+    assert module.EventName.TASK_FAILED not in registered_events
+
+    module.clear_websocket_forwarding_events()
+    module.register_platform_websocket_events()
+
+
+@pytest.mark.asyncio
+async def test_registered_websocket_event_is_forwarded(ws_module) -> None:
+    module, event_bus = ws_module
+    broker = module.WebSocketBroker(event_bus=event_bus)
+    websocket = FakeWebSocket()
+    module.clear_websocket_forwarding_events()
+    module.register_websocket_forwarding_event("custom.workflow.updated")
+
+    await broker.connect(websocket, token=TEST_OPERATOR_TOKEN)
+    await broker.handle_event(module.Event(name="custom.workflow.updated", payload={"value": 1}, source="test"))
+
+    assert websocket.sent_messages[0]["event_name"] == "custom.workflow.updated"
+    assert websocket.sent_messages[0]["payload"] == {"value": 1}
+
+    module.clear_websocket_forwarding_events()
+    module.register_platform_websocket_events()
 
 
 @pytest.mark.asyncio

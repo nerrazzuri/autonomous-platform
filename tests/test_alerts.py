@@ -16,7 +16,11 @@ if str(ROOT) not in sys.path:
 def alerts_module():
     import shared.observability.alerts as module
 
-    return module
+    module.clear_alert_rules()
+    module.register_platform_alert_rules()
+    yield module
+    module.clear_alert_rules()
+    module.register_platform_alert_rules()
 
 
 def make_alert(alerts_module, **overrides):
@@ -158,6 +162,87 @@ def test_warning_error_and_critical_alerts_create_audit_events(alerts_module, mo
 
     assert [call["severity"] for call in calls] == ["warning", "error", "critical"]
     assert all(call["event_type"] == "alert_emitted" for call in calls)
+
+
+def test_shared_alert_rules_exclude_app_specific_events(alerts_module) -> None:
+    from shared.core.event_bus import EventName
+
+    alerts_module.clear_alert_rules()
+    alerts_module.register_platform_alert_rules()
+
+    registered_events = {rule.event_name for rule in alerts_module.get_registered_alert_rules()}
+
+    assert EventName.BATTERY_CRITICAL in registered_events
+    assert EventName.ESTOP_TRIGGERED in registered_events
+    assert EventName.ESTOP_RELEASED in registered_events
+    assert EventName.TASK_FAILED not in registered_events
+    assert EventName.PATROL_CYCLE_FAILED not in registered_events
+
+
+@pytest.mark.asyncio
+async def test_registered_app_alert_rule_emits_alert(alerts_module) -> None:
+    from shared.core.event_bus import EventBus, EventName
+
+    event_bus = EventBus()
+    router = alerts_module.AlertRouter(max_alerts=10, event_bus=event_bus)
+    alerts_module.clear_alert_rules()
+    alerts_module.register_alert_rule(
+        event_name=EventName.TASK_FAILED,
+        alert_type="custom_task_failed",
+        default_message="Custom task failed",
+        severity="error",
+        source="custom_app",
+    )
+    await event_bus.start()
+    await router.start()
+
+    await event_bus.publish(EventName.TASK_FAILED, {"task_id": "task-1", "robot_id": "robot-01"}, task_id="task-1")
+    await event_bus.wait_until_idle(timeout=1.0)
+
+    emitted = router.list_alerts()
+    assert len(emitted) == 1
+    assert emitted[0].event_type == "custom_task_failed"
+    assert emitted[0].message == "Custom task failed"
+    assert emitted[0].source == "custom_app"
+    assert emitted[0].task_id == "task-1"
+    assert emitted[0].robot_id == "robot-01"
+
+    await router.stop()
+    await event_bus.stop()
+    alerts_module.clear_alert_rules()
+    alerts_module.register_platform_alert_rules()
+
+
+def test_logistics_alert_registration_lives_in_app_layer(alerts_module) -> None:
+    from apps.logistics.observability.alerts import register_logistics_alert_rules
+    from shared.core.event_bus import EventName
+
+    alerts_module.clear_alert_rules()
+    register_logistics_alert_rules()
+
+    registered_events = {rule.event_name for rule in alerts_module.get_registered_alert_rules()}
+
+    assert EventName.TASK_FAILED in registered_events
+    assert EventName.PATROL_CYCLE_FAILED not in registered_events
+
+    alerts_module.clear_alert_rules()
+    alerts_module.register_platform_alert_rules()
+
+
+def test_patrol_alert_registration_lives_in_app_layer(alerts_module) -> None:
+    from apps.patrol.observability.alerts import register_patrol_alert_rules
+    from shared.core.event_bus import EventName
+
+    alerts_module.clear_alert_rules()
+    register_patrol_alert_rules()
+
+    registered_events = {rule.event_name for rule in alerts_module.get_registered_alert_rules()}
+
+    assert EventName.PATROL_CYCLE_FAILED in registered_events
+    assert EventName.TASK_FAILED not in registered_events
+
+    alerts_module.clear_alert_rules()
+    alerts_module.register_platform_alert_rules()
 
 
 @pytest.mark.asyncio
