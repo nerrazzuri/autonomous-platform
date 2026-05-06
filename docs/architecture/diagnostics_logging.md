@@ -1,14 +1,15 @@
 # Diagnostics Logging Architecture
 
-This document defines the OBS-1 diagnostics logging contract for developers and operators. OBS-1 is a non-invasive diagnostics layer: it records compact diagnostic events for troubleshooting without changing robot motion, ROS behavior, SDK behavior, API behavior, or UI behavior.
+This document defines the shared diagnostics logging contract for developers and operators. The shared diagnostics package is reusable platform infrastructure: it records compact diagnostic events and routes structured logs for troubleshooting without changing robot motion, ROS behavior, SDK behavior, API behavior, or UI behavior.
 
 ## Purpose
 
 - Provide a shared `DiagnosticEvent` shape for module health and fault reporting.
 - Keep diagnostic reporting separate from normal application logs.
 - Store recent diagnostic events in memory for later inspection by future tools.
-- Give future modules a consistent severity, error code, redaction, and suggested-action vocabulary.
+- Give future modules a consistent severity, platform error-code, redaction, and suggested-action vocabulary.
 - Fail quietly if diagnostics reporting itself fails; diagnostics must not interrupt robot operation.
+- Keep shared diagnostics focused on mechanisms. App-specific diagnostic meaning belongs under app packages such as `apps/logistics/diagnostics/`.
 
 ## Signal Types
 
@@ -27,7 +28,7 @@ Required fields:
 
 - `event_id`: unique event identifier string.
 - `ts`: UTC ISO-8601 timestamp string.
-- `module`: stable module name, for example `logistics.watchdog`.
+- `module`: stable module name, for example `sdk_adapter` or `custom_app_module`.
 - `event`: stable dotted or snake_case event name.
 - `severity`: one of `debug`, `info`, `warning`, `error`, `critical`.
 - `error_code`: stable string error code, or `null` when the event is informational.
@@ -46,6 +47,8 @@ Optional fields:
 - `details`: small redacted dictionary with structured context.
 - `suggested_action`: concise next diagnostic step for an operator or developer.
 
+The optional `task_id`, `route_id`, `station_id`, and `waypoint_id` fields are generic correlation/context fields. They are not a reason to add more app-specific schema to the shared `DiagnosticEvent`; app-specific diagnostic meaning and error-code constants should live under the app package.
+
 Do not put raw sensor data, map files, SDK payload dumps, authorization headers, tokens, passwords, private keys, attendee data, or full local config files in diagnostic events.
 
 ## Severity Levels
@@ -60,17 +63,16 @@ Use the lowest severity that accurately describes the impact. Escalate only when
 
 ## Error Code Categories
 
-Use stable string codes. The shared taxonomy exposes uppercase Python constants such as `SDK_CONNECT_FAILED` whose values are JSON-friendly strings such as `sdk.connect_failed`. Prefer category prefixes so future tools can group events:
+Use stable string codes. The shared taxonomy exposes uppercase Python constants such as `SDK_CONNECT_FAILED` whose values are JSON-friendly strings such as `sdk.connect_failed`. Shared error codes are limited to platform infrastructure, robotics, startup, configuration, and generic navigation/obstacle conditions:
 
 - `config.*`: missing, invalid, or placeholder configuration.
 - `network.*`: unavailable host, timeout, disconnected client, or broken transport.
 - `sdk.*`: SDK initialization, session, command, or dependency issue.
 - `ros2.*`, `lidar.*`, `odom.*`, `tf.*`, `localization.*`, `map.*`: ROS, LiDAR, transform, localization, and map issues.
-- `route.*`, `navigation.*`, `waypoint.*`: route and navigation lifecycle issues.
+- `navigation.*`: generic navigation lifecycle issues.
 - `obstacle.*`: obstacle detection, clear, and auto-resume conditions.
-- `task.*`, `dispatcher.*`: task queue, dispatch, and lifecycle conditions.
-- `hmi.*`, `tjc.*`, `commissioning.*`: HMI, TJC, and route commissioning conditions.
-- `audio.*`: speaker and audio playback issues.
+
+App-specific taxonomies belong under app packages. For example, logistics workflow codes such as `route.*`, `task.*`, `dispatcher.*`, `hmi.*`, `tjc.*`, `commissioning.*`, and `audio.*` live under `apps.logistics.diagnostics.error_codes`, not in `shared.diagnostics`.
 
 Use `null` for `error_code` when an event is normal status rather than a fault.
 
@@ -92,19 +94,19 @@ This example uses fake placeholder values only:
 {
   "event_id": "diag-00000000-0000-4000-8000-000000000000",
   "ts": "2026-01-01T00:00:00+00:00",
-  "module": "logistics.watchdog",
+  "module": "sdk_adapter",
   "event": "telemetry_stale",
   "severity": "warning",
   "error_code": "sdk.telemetry_stale",
   "message": "Robot telemetry has not updated within the configured window.",
-  "subsystem": "watchdog",
+  "subsystem": "sdk",
   "robot_id": "<robot-id>",
   "task_id": "<task-id>",
   "route_id": "<route-id>",
   "station_id": null,
   "waypoint_id": null,
   "correlation_id": "<correlation-id>",
-  "source": "watchdog",
+  "source": "sdk_adapter",
   "suggested_action": "Check robot connection status and confirm telemetry resumes before continuing operations.",
   "details": {
     "age_seconds": 6.5,
@@ -138,21 +140,17 @@ logs/
   app.log
   app.jsonl
   modules/
-    sdk_adapter.jsonl
-    ros2_bridge.jsonl
-    navigation.jsonl
-    obstacle.jsonl
-    dispatcher.jsonl
-    task_queue.jsonl
-    hmi.jsonl
-    commissioning.jsonl
-    provisioning.jsonl
-    speaker.jsonl
-    tjc_agent.jsonl
-    system_health.jsonl
+    <module>.jsonl
 ```
 
 The router creates `logs/` and `logs/modules/`, writes a human-readable master log to `app.log`, writes a structured master stream to `app.jsonl`, and routes each structured record to a module-specific JSONL file. Unknown module names are sanitized before becoming filenames, so module strings cannot create paths outside `logs/modules/`.
+
+Example module files:
+
+- `sdk_adapter.jsonl`
+- `ros2_bridge.jsonl`
+- `navigation.jsonl`
+- `custom_app_module.jsonl`
 
 Use:
 

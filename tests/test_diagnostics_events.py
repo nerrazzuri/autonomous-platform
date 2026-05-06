@@ -171,6 +171,6 @@ def test_sensitive_details_are_redacted() -> None:
 
 def test_get_suggested_action_known_unknown_and_constant_types() -> None:
     assert isinstance(error_codes.SDK_CONNECT_FAILED, str)
-    assert error_codes.get_suggested_action(error_codes.ROUTE_NOT_FOUND)
+    assert error_codes.get_suggested_action(error_codes.LIDAR_SCAN_TIMEOUT)
     assert error_codes.get_suggested_action("app.custom") is None
     assert error_codes.get_suggested_action(None) is None

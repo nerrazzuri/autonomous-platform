@@ -92,10 +92,10 @@ def test_module_filter() -> None:
 
 def test_error_code_filter() -> None:
     store = DiagnosticEventStore(max_events=10)
-    target = store.add(make_event(1, error_code=error_codes.ROUTE_NOT_FOUND))
-    store.add(make_event(2, error_code=error_codes.SDK_CONNECT_FAILED))
+    target = store.add(make_event(1, error_code=error_codes.SDK_CONNECT_FAILED))
+    store.add(make_event(2, error_code=error_codes.LIDAR_SCAN_TIMEOUT))
 
-    assert store.recent(error_code=error_codes.ROUTE_NOT_FOUND) == [target]
+    assert store.recent(error_code=error_codes.SDK_CONNECT_FAILED) == [target]
 
 
 def test_robot_id_and_task_id_filters_use_and_semantics() -> None:

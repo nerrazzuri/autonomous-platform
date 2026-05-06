@@ -56,6 +56,8 @@ class DiagnosticEvent:
     error_code: str | None = None
     subsystem: str | None = None
     robot_id: str | None = None
+    # These are generic correlation/context fields. App-specific meaning and
+    # app-specific error-code taxonomies should live under app packages.
     task_id: str | None = None
     route_id: str | None = None
     station_id: str | None = None
