@@ -82,11 +82,13 @@ def test_to_dict_is_json_serializable() -> None:
         event="e",
         message="msg",
         details={"plain": "ok"},
+        context={"route_id": "route-1"},
     )
 
     payload = event.to_dict()
 
     assert payload["severity"] == "info"
+    assert payload["context"] == {"route_id": "route-1"}
     json.dumps(payload)
 
 
@@ -116,6 +118,69 @@ def test_from_dict_round_trip() -> None:
     restored = DiagnosticEvent.from_dict(event.to_dict())
 
     assert restored == event
+
+
+def test_context_round_trips_through_dict_and_json() -> None:
+    event = DiagnosticEvent.create(
+        severity="warning",
+        module="navigation",
+        event="navigation.blocked",
+        message="Navigation blocked.",
+        robot_id="robot_01",
+        context={"route_id": "route_123", "waypoint_id": "wp_01", "retryable": True},
+    )
+
+    assert event.context == {"route_id": "route_123", "waypoint_id": "wp_01", "retryable": True}
+    assert DiagnosticEvent.from_dict(event.to_dict()).context == event.context
+    assert DiagnosticEvent.from_json(event.to_json()).context == event.context
+
+
+def test_legacy_context_fields_merge_into_context() -> None:
+    event = DiagnosticEvent.create(
+        severity="warning",
+        module="navigation",
+        event="navigation.blocked",
+        message="Navigation blocked.",
+        task_id="task-1",
+        route_id="route-1",
+        station_id="station-1",
+        waypoint_id="waypoint-1",
+    )
+
+    assert event.context == {
+        "task_id": "task-1",
+        "route_id": "route-1",
+        "station_id": "station-1",
+        "waypoint_id": "waypoint-1",
+    }
+    assert event.to_dict()["context"]["route_id"] == "route-1"
+
+
+def test_explicit_context_wins_over_legacy_context_fields() -> None:
+    event = DiagnosticEvent.create(
+        severity="warning",
+        module="navigation",
+        event="navigation.blocked",
+        message="Navigation blocked.",
+        route_id="legacy-route",
+        context={"route_id": "context-route"},
+    )
+
+    assert event.context["route_id"] == "context-route"
+    assert event.route_id == "legacy-route"
+
+
+def test_context_redacts_sensitive_values() -> None:
+    event = DiagnosticEvent.create(
+        severity="info",
+        module="m",
+        event="e",
+        message="msg",
+        context={"api_token": "not-a-real-token", "robot_id": "robot_01"},
+    )
+
+    assert event.context["api_token"] == "[REDACTED]"
+    assert event.context["robot_id"] == "robot_01"
 
 
 def test_suggested_action_auto_filled_by_error_code() -> None:

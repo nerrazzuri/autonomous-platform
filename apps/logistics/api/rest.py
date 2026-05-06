@@ -205,6 +205,7 @@ class AuditEventResponse(BaseModel):
     actor_type: str
     actor_id: str | None = None
     robot_id: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
     task_id: str | None = None
     cycle_id: str | None = None
     route_id: str | None = None
@@ -309,6 +310,7 @@ def _append_audit_event(
     cycle_id: str | None = None,
     route_id: str | None = None,
     job_id: str | None = None,
+    context: dict[str, Any] | None = None,
     message: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> AuditEvent | None:
@@ -323,6 +325,7 @@ def _append_audit_event(
             cycle_id=cycle_id,
             route_id=route_id,
             job_id=job_id,
+            context=context or {},
             message=message,
             metadata=metadata or {},
         )

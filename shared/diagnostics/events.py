@@ -13,6 +13,8 @@ from uuid import uuid4
 from shared.diagnostics.error_codes import get_suggested_action
 from shared.diagnostics.redaction import redact_mapping
 
+ContextValue = str | int | float | bool | None
+
 
 class DiagnosticSeverity(str, Enum):
     DEBUG = "debug"
@@ -45,6 +47,22 @@ def _normalize_optional_string(value: object, field_name: str) -> str | None:
     return _require_non_empty_string(value, field_name)
 
 
+def _normalize_context(value: Mapping[str, Any] | None) -> dict[str, ContextValue]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError("context must be a mapping")
+    redacted = redact_mapping(value)
+    normalized: dict[str, ContextValue] = {}
+    for key, item in redacted.items():
+        context_key = _require_non_empty_string(str(key), "context key")
+        if item is None or isinstance(item, (str, int, float, bool)):
+            normalized[context_key] = item
+        else:
+            normalized[context_key] = json.dumps(item, default=repr, sort_keys=True)
+    return normalized
+
+
 @dataclass(frozen=True)
 class DiagnosticEvent:
     event_id: str
@@ -56,8 +74,9 @@ class DiagnosticEvent:
     error_code: str | None = None
     subsystem: str | None = None
     robot_id: str | None = None
-    # These are generic correlation/context fields. App-specific meaning and
-    # app-specific error-code taxonomies should live under app packages.
+    context: dict[str, ContextValue] = field(default_factory=dict)
+    # Deprecated compatibility fields. App/domain-specific identifiers should
+    # be passed through context; these remain temporarily for existing callers.
     task_id: str | None = None
     route_id: str | None = None
     station_id: str | None = None
@@ -92,6 +111,12 @@ class DiagnosticEvent:
         if not isinstance(self.details, Mapping):
             raise ValueError("details must be a mapping")
         object.__setattr__(self, "details", redact_mapping(self.details))
+        context = _normalize_context(self.context)
+        for field_name in ("task_id", "route_id", "station_id", "waypoint_id"):
+            legacy_value = getattr(self, field_name)
+            if legacy_value is not None and field_name not in context:
+                context[field_name] = legacy_value
+        object.__setattr__(self, "context", context)
 
         if self.suggested_action is None and self.error_code is not None:
             object.__setattr__(self, "suggested_action", get_suggested_action(self.error_code))
@@ -107,6 +132,7 @@ class DiagnosticEvent:
         error_code: str | None = None,
         subsystem: str | None = None,
         robot_id: str | None = None,
+        context: Mapping[str, Any] | None = None,
         task_id: str | None = None,
         route_id: str | None = None,
         station_id: str | None = None,
@@ -126,6 +152,7 @@ class DiagnosticEvent:
             error_code=error_code,
             subsystem=subsystem,
             robot_id=robot_id,
+            context=dict(context or {}),
             task_id=task_id,
             route_id=route_id,
             station_id=station_id,
@@ -147,6 +174,7 @@ class DiagnosticEvent:
             "error_code": self.error_code,
             "subsystem": self.subsystem,
             "robot_id": self.robot_id,
+            "context": dict(self.context),
             "task_id": self.task_id,
             "route_id": self.route_id,
             "station_id": self.station_id,
@@ -174,6 +202,7 @@ class DiagnosticEvent:
             error_code=data.get("error_code"),
             subsystem=data.get("subsystem"),
             robot_id=data.get("robot_id"),
+            context=data.get("context") or {},
             task_id=data.get("task_id"),
             route_id=data.get("route_id"),
             station_id=data.get("station_id"),

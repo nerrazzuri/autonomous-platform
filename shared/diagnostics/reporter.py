@@ -40,6 +40,8 @@ class DiagnosticReporter:
         error_code: str | None = None,
         subsystem: str | None = None,
         robot_id: str | None = None,
+        context: Mapping[str, Any] | None = None,
+        # Deprecated compatibility fields. Prefer context for app/domain IDs.
         task_id: str | None = None,
         route_id: str | None = None,
         station_id: str | None = None,
@@ -58,6 +60,7 @@ class DiagnosticReporter:
                 error_code=error_code,
                 subsystem=subsystem,
                 robot_id=robot_id,
+                context=context,
                 task_id=task_id,
                 route_id=route_id,
                 station_id=station_id,
@@ -100,6 +103,7 @@ class DiagnosticReporter:
             extra={
                 "event": event.event,
                 "robot_id": event.robot_id,
+                "context": event.context,
                 "task_id": event.task_id,
                 "route_id": event.route_id,
                 "error_code": event.error_code,

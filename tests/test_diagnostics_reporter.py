@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import inspect
 from pathlib import Path
 
 import pytest
@@ -34,11 +35,30 @@ def shutdown_router():
 
 
 def test_reporter_module_has_no_apps_dependency() -> None:
-    reporter_path = Path(__file__).resolve().parents[1] / "shared" / "diagnostics" / "reporter.py"
-    content = reporter_path.read_text(encoding="utf-8")
+    diagnostics_dir = Path(__file__).resolve().parents[1] / "shared" / "diagnostics"
+    content = "\n".join(path.read_text(encoding="utf-8") for path in diagnostics_dir.glob("*.py"))
 
     assert "from apps" not in content
     assert "import apps" not in content
+
+
+def test_reporter_has_no_new_domain_identifier_parameters() -> None:
+    from shared.diagnostics.reporter import DiagnosticReporter
+
+    signature = inspect.signature(DiagnosticReporter.report)
+    legacy_compatibility_fields = {"task_id", "route_id", "station_id", "waypoint_id"}
+    forbidden_new_domain_fields = {
+        "cycle_id",
+        "job_id",
+        "load_id",
+        "unload_id",
+        "line_id",
+        "dock_id",
+        "checkpoint_id",
+    }
+
+    assert legacy_compatibility_fields.issubset(signature.parameters)
+    assert forbidden_new_domain_fields.isdisjoint(signature.parameters)
 
 
 def test_reporter_publishes_shared_platform_event() -> None:
@@ -100,8 +120,8 @@ def test_reporter_logs_to_diagnostics_logging_router(tmp_path: Path) -> None:
         event="navigation.started",
         message="Navigation started.",
         robot_id="robot_01",
+        context={"route_id": "route-1"},
         task_id="task-1",
-        route_id="route-1",
         correlation_id="corr-1",
         details={"speed_limit_mps": 0.2},
     )
@@ -113,10 +133,36 @@ def test_reporter_logs_to_diagnostics_logging_router(tmp_path: Path) -> None:
     assert app_record["event"] == "navigation.started"
     assert app_record["message"] == "Navigation started."
     assert app_record["robot_id"] == "robot_01"
+    assert app_record["context"] == {"route_id": "route-1", "task_id": "task-1"}
     assert app_record["task_id"] == "task-1"
-    assert app_record["route_id"] == "route-1"
     assert app_record["correlation_id"] == "corr-1"
     assert app_record["details"] == {"speed_limit_mps": 0.2}
+
+
+def test_reporter_accepts_context_and_merges_legacy_fields() -> None:
+    from shared.diagnostics.reporter import DiagnosticReporter
+
+    store = DiagnosticEventStore()
+    reporter = DiagnosticReporter(store=store, default_module="navigation")
+
+    event = reporter.warning(
+        event="navigation.blocked",
+        message="Navigation blocked.",
+        context={"route_id": "context-route"},
+        task_id="task-1",
+        route_id="legacy-route",
+        station_id="station-1",
+        waypoint_id="waypoint-1",
+    )
+
+    assert event is not None
+    assert event.context == {
+        "route_id": "context-route",
+        "task_id": "task-1",
+        "station_id": "station-1",
+        "waypoint_id": "waypoint-1",
+    }
+    assert store.recent() == [event]
 
 
 def test_reporter_redacts_secrets_in_details(tmp_path: Path) -> None:
